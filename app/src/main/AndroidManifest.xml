@@ -2,10 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.schrammel.personal_running_tracker">
 
-    <!--
-      No internet permission: the app is fully offline-capable.
-      Location permission is requested at runtime in Phase 2.
-    -->
+    <!-- No internet permission: the app is fully offline-capable. -->
+    <!-- Location permission is requested at runtime in Phase 2. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
