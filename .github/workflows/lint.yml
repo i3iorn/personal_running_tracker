@@ -1,0 +1,40 @@
+name: Lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant execute permission to gradlew
+        run: chmod +x ./gradlew
+
+      # Kotlin compiler emits warnings/errors; treat warnings as visible.
+      # `compileDebugKotlin` is the reliable, dependency-free lint gate for
+      # this project (no separate lint plugin is required for Phase 1).
+      - name: Kotlin compile / lint
+        run: ./gradlew --console=plain :app:compileDebugKotlin
+
+      - name: Dependency resolution check
+        run: ./gradlew --console=plain :app:dependencies --configuration debugRuntimeClasspath

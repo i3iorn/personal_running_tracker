@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant execute permission to gradlew
+        run: chmod +x ./gradlew
+
+      - name: Run tests
+        run: ./gradlew --console=plain :app:testDebugUnitTest
+
+      - name: Build release APK
+        run: ./gradlew --console=plain :app:assembleRelease
+
+      - name: Locate release APK
+        id: locate
+        run: |
+          # Signed builds produce app-release.apk; unsigned produce app-release-unsigned.apk.
+          APK=""
+          for f in \
+            app/build/outputs/apk/release/app-release.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk; do
+            if [ -f "$f" ]; then APK="$f"; break; fi
+          done
+          if [ -z "$APK" ]; then
+            echo "::error::No release APK found under app/build/outputs/apk/release/"
+            exit 1
+          fi
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "Release APK: $APK"
+          ls -lh "$APK"
+
+      - name: Upload release APK asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: ${{ steps.locate.outputs.apk }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.locate.outputs.apk }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
