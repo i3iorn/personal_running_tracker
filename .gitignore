@@ -1,0 +1,26 @@
+# Gradle
+/.gradle
+/gradle/wrapper/gradle-wrapper.jar
+
+# Build artifacts
+/build
+/app/build
+
+# Local configuration
+/local.properties
+/.idea
+*.apk
+*.apk-unsigned
+
+# OS
+*.exe
+*.dll
+.DS_Store
+
+# Android Studio specific
+*.iws
+*.iml
+*.log
+
+# Keep keystore properties out of version control
+keystore.properties
