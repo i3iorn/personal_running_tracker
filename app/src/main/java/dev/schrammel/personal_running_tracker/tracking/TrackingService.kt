@@ -65,6 +65,9 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private var maxAccuracyMetersSeen: Float = 0f
     private var lastAccuracyMeters: Float? = null
     private var lastNotificationDegraded: Boolean = false
+    private var lastFixTimeMs: Long = 0L
+    private var lastFixGapMs: Long = 0L
+    private var movingSegmentMs: Long = 0L
     private val recentSpeeds = ArrayDeque<Pair<Long, Float>>() // (timeMs, speedMps)
     @Volatile private var lastFinishedRunId: Long = 0L
 
@@ -74,12 +77,14 @@ class TrackingService : Service(), SensorAdapter.Callback {
     fun currentDistanceMeters(): Double = currentDistanceMeters
     fun currentAccuracyMeters(): Float? = lastAccuracyMeters
 
-    /** Smoothed current speed (m/s): mean GPS speed over the configured window; null when stationary. */
+    /** Smoothed current speed (m/s). The effective window scales up to cover the
+     * configured GPS fix interval so the buffer never sits empty between fixes. */
     fun currentSmoothedSpeedMps(): Double? {
-        val windowMs = prefs.paceSmoothingWindowMs
+        val effWindow = maxOf(prefs.paceSmoothingWindowMs, 3 * lastFixGapMs + 1_000L)
         val minSpeed = prefs.paceMinSpeedMps.toDouble()
-        val cutoff = System.currentTimeMillis() - windowMs
+        val cutoff = System.currentTimeMillis() - effWindow
         recentSpeeds.removeAll { it.first < cutoff }
+        while (recentSpeeds.size > 30) recentSpeeds.removeFirst()
         if (recentSpeeds.isEmpty()) return null
         val mean = recentSpeeds.map { it.second }.average()
         return if (mean >= minSpeed) mean else null
@@ -121,9 +126,11 @@ class TrackingService : Service(), SensorAdapter.Callback {
         stepCount = state.stepCount
         trackingProfile = state.trackingProfile
         batteryStartPct = state.batteryStartPct
+        movingSegmentMs = prefs.runStateMovingSegmentMs
     }
 
     private suspend fun persistState() {
+        prefs.runStateMovingSegmentMs = movingSegmentMs
         database.runStateDao().upsert(
             RunStateEntity(
                 runId = runId, isRunning = isRunning, isPaused = isPaused,
@@ -165,6 +172,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
             isPaused = false
             accumElapsedMs = 0L
             accumMovingMs = 0L
+            movingSegmentMs = 0L
+            lastFixTimeMs = 0L
             segmentStartMs = System.currentTimeMillis()
             currentDistanceMeters = 0.0
             lastLat = null
@@ -289,13 +298,33 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val timeMs = System.currentTimeMillis()
         val prevLat = lastLat
         val prevLng = lastLng
+        val gapMs = if (lastFixTimeMs > 0) (timeMs - lastFixTimeMs).coerceAtLeast(0) else 0L
+        lastFixTimeMs = timeMs
+        lastFixGapMs = gapMs
         if (prevLat != null && prevLng != null) {
             currentDistanceMeters += haversineMeters(prevLat, prevLng, lat, lng)
         }
         val accuracy = location.accuracy.coerceAtLeast(0f)
         if (accuracy > maxAccuracyMetersSeen) maxAccuracyMetersSeen = accuracy
         lastAccuracyMeters = accuracy
-        recentSpeeds.addLast(timeMs to location.speed.coerceAtLeast(0f))
+        // Speed: trust the GPS-reported value when present, otherwise derive it
+        // from the segment distance/time (reported speed is often 0 on network fixes).
+        val reported = location.speed.coerceAtLeast(0f)
+        val segmentSpeed = if (prevLat != null && prevLng != null && gapMs > 0) {
+            (haversineMeters(prevLat, prevLng, lat, lng) / (gapMs / 1000.0)).toFloat()
+        } else reported
+        val effectiveSpeed = if (reported > 0.5f) reported else segmentSpeed.coerceAtLeast(0f)
+        recentSpeeds.addLast(timeMs to effectiveSpeed)
+
+        // Auto-pause: stationary periods do not accumulate moving time (spec §10)
+        val stationaryThresholdMps = 0.2 + prefs.autoPauseSensitivity * 0.03
+        if (!isPaused && gapMs > 0 && prefs.autoPauseEnabled &&
+            effectiveSpeed < stationaryThresholdMps
+        ) {
+            // stationary: elapsed time still runs, moving time does not
+        } else if (!isPaused && gapMs > 0) {
+            movingSegmentMs += gapMs
+        }
         if (isRunning) updateNotificationText(accuracy)
         lastLat = lat
         lastLng = lng
@@ -335,7 +364,9 @@ class TrackingService : Service(), SensorAdapter.Callback {
         if (!isRunning || isPaused) return
         val now = System.currentTimeMillis()
         accumElapsedMs += now - segmentStartMs
-        accumMovingMs += now - segmentStartMs
+        // Moving time is accumulated per fix in onLocationChanged (auto-pause aware)
+        accumMovingMs += movingSegmentMs
+        movingSegmentMs = 0
         isPaused = true
         stopLocationUpdates()
         stopSensorUpdates()
@@ -344,6 +375,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private fun resumeRun() {
         if (!isRunning || !isPaused) return
         isPaused = false
+        movingSegmentMs = 0L
         segmentStartMs = System.currentTimeMillis()
         startLocationUpdates(trackingProfile)
         startSensorUpdates()
@@ -354,7 +386,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val wasPaused = isPaused
         val now = System.currentTimeMillis()
         val elapsedMs = accumElapsedMs + (if (wasPaused) 0L else now - segmentStartMs)
-        val movingMs = accumMovingMs + (if (wasPaused) 0L else now - segmentStartMs)
+        val movingMs = accumMovingMs + movingSegmentMs
         isRunning = false
         isPaused = false
         stopLocationUpdates()
@@ -427,8 +459,9 @@ class TrackingService : Service(), SensorAdapter.Callback {
     }
 
     private suspend fun recordDiagnostics(runId: Long, durationMs: Long, fusedDistanceMeters: Double) {
-        val batteryStart = batteryStartPct
-        val batteryEnd = getBatteryLevel()
+        val benchEnabled = prefs.batteryBenchmarkEnabled
+        val batteryStart = if (benchEnabled) batteryStartPct else null
+        val batteryEnd = if (benchEnabled) getBatteryLevel() else null
         // Compute battery consumed percent: (start - end), clamped to 0-100
         val batteryConsumed = if (batteryStart != null && batteryEnd != null) {
             (batteryStart - batteryEnd).coerceAtLeast(0).coerceAtMost(100)

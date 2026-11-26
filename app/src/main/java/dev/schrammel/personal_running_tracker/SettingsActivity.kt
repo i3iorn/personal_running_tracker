@@ -45,73 +45,74 @@ class SettingsActivity : AppCompatActivity() {
         switch("Keep screen on during run", { prefs.screenOnEnabled }, { prefs.screenOnEnabled = it })
 
         section("GPS scheduling (expert — bad values kill battery or accuracy)")
-        number("Battery Saver: GPS min interval (ms)", { prefs.saverGpsMinIntervalMs.toDouble() },
-            { prefs.saverGpsMinIntervalMs = it.toLong() })
-        number("Battery Saver: GPS min distance (m)", { prefs.saverGpsMinDistanceMeters.toDouble() },
-            { prefs.saverGpsMinDistanceMeters = it.toFloat() })
-        number("High Accuracy: GPS min interval (ms)", { prefs.highAccuracyGpsMinIntervalMs.toDouble() },
-            { prefs.highAccuracyGpsMinIntervalMs = it.toLong() })
-        number("High Accuracy: GPS min distance (m)", { prefs.highAccuracyGpsMinDistanceMeters.toDouble() },
-            { prefs.highAccuracyGpsMinDistanceMeters = it.toFloat() })
+        slider("Battery Saver: GPS min interval", 1.0, 120.0, 1.0, { prefs.saverGpsMinIntervalMs / 1000.0 },
+            { prefs.saverGpsMinIntervalMs = (it * 1000).toLong() }, "s", 60.0)
+        slider("Battery Saver: GPS min distance", 10.0, 190.0, 5.0, { prefs.saverGpsMinDistanceMeters.toDouble() },
+            { prefs.saverGpsMinDistanceMeters = it.toFloat() }, "m", 100.0)
+        slider("High Accuracy: GPS min interval", 1.0, 10.0, 1.0, { prefs.highAccuracyGpsMinIntervalMs / 1000.0 },
+            { prefs.highAccuracyGpsMinIntervalMs = (it * 1000).toLong() }, "s", 5.0)
+        slider("High Accuracy: GPS min distance", 1.0, 19.0, 1.0, { prefs.highAccuracyGpsMinDistanceMeters.toDouble() },
+            { prefs.highAccuracyGpsMinDistanceMeters = it.toFloat() }, "m", 10.0)
 
         section("Algorithm tuning (overrides profile defaults)")
-        number("Balanced: GPS min interval (ms)", { prefs.tuningGpsMinIntervalMs.toDouble() },
-            { prefs.tuningGpsMinIntervalMs = it.toLong() })
-        number("Balanced: GPS max interval (ms)", { prefs.tuningGpsMaxIntervalMs.toDouble() },
-            { prefs.tuningGpsMaxIntervalMs = it.toLong() })
-        number("Balanced: GPS min distance (m)", { prefs.tuningGpsMinDistanceMeters.toDouble() },
-            { prefs.tuningGpsMinDistanceMeters = it.toFloat() })
-        number("GPS accuracy threshold (m)", { prefs.tuningGpsAccuracyThresholdMeters.toDouble() },
-            { prefs.tuningGpsAccuracyThresholdMeters = it.toFloat() })
-        number("Stride length (m)", { prefs.tuningStrideLengthMeters },
-            { prefs.tuningStrideLengthMeters = it })
-        number("Sensor fusion max GPS segment ratio", { prefs.tuningSensorFusionMaxGpsSegmentRatio },
-            { prefs.tuningSensorFusionMaxGpsSegmentRatio = it })
-        number("Stable-uncertainty re-evaluate (m)", { prefs.tuningStableUncertaintyReevaluateMeters },
-            { prefs.tuningStableUncertaintyReevaluateMeters = it })
+        slider("Balanced: GPS min interval", 1.0, 60.0, 1.0, { prefs.tuningGpsMinIntervalMs / 1000.0 },
+            { prefs.tuningGpsMinIntervalMs = (it * 1000).toLong() }, "s", 30.0)
+        slider("Balanced: GPS max interval", 60.0, 180.0, 5.0, { prefs.tuningGpsMaxIntervalMs / 1000.0 },
+            { prefs.tuningGpsMaxIntervalMs = (it * 1000).toLong() }, "s", 120.0)
+        slider("Balanced: GPS min distance", 5.0, 55.0, 5.0, { prefs.tuningGpsMinDistanceMeters.toDouble() },
+            { prefs.tuningGpsMinDistanceMeters = it.toFloat() }, "m", 30.0)
+        slider("GPS accuracy threshold", 5.0, 55.0, 5.0, { prefs.tuningGpsAccuracyThresholdMeters.toDouble() },
+            { prefs.tuningGpsAccuracyThresholdMeters = it.toFloat() }, "m", 30.0)
+        slider("Stride length", 0.3, 1.2, 0.05, { prefs.tuningStrideLengthMeters },
+            { prefs.tuningStrideLengthMeters = it }, "m", 0.75)
+        slider("Sensor fusion max GPS segment ratio", 3.0, 17.0, 1.0, { prefs.tuningSensorFusionMaxGpsSegmentRatio },
+            { prefs.tuningSensorFusionMaxGpsSegmentRatio = it }, "x", 10.0)
+        slider("Stable-uncertainty re-evaluate", 10.0, 90.0, 5.0, { prefs.tuningStableUncertaintyReevaluateMeters },
+            { prefs.tuningStableUncertaintyReevaluateMeters = it }, "m", 50.0)
 
         section("Live pace display")
-        number("Pace smoothing window (ms)", { prefs.paceSmoothingWindowMs.toDouble() },
-            { prefs.paceSmoothingWindowMs = it.toLong() })
-        number("Pace: min speed m/s (below = stationary)", { prefs.paceMinSpeedMps.toDouble() },
-            { prefs.paceMinSpeedMps = it.toFloat() })
-        number("Pace: max GPS accuracy m (above = hide pace)", { prefs.paceMaxAccuracyMeters.toDouble() },
-            { prefs.paceMaxAccuracyMeters = it.toFloat() })
+        slider("Pace smoothing window", 2.0, 18.0, 1.0, { prefs.paceSmoothingWindowMs / 1000.0 },
+            { prefs.paceSmoothingWindowMs = (it * 1000).toLong() }, "s", 10.0)
+        slider("Pace: min speed (below = stationary)", 0.0, 0.6, 0.05, { prefs.paceMinSpeedMps.toDouble() },
+            { prefs.paceMinSpeedMps = it.toFloat() }, "m/s", 0.3)
+        slider("Pace: max GPS error (above = hide pace)", 5.0, 35.0, 5.0, { prefs.paceMaxAccuracyMeters.toDouble() },
+            { prefs.paceMaxAccuracyMeters = it.toFloat() }, "m", 20.0)
 
         section("Splits & records")
-        number("Split length (m)", { prefs.splitLengthMeters }, { prefs.splitLengthMeters = it })
+        slider("Split length", 200.0, 1800.0, 100.0, { prefs.splitLengthMeters },
+            { prefs.splitLengthMeters = it }, "m", 1000.0)
         text("Personal record distances (km, comma separated)",
             { prefs.prDistanceKmList }, { prefs.prDistanceKmList = it })
 
         section("Import & charts")
-        number("GPX import max size (MB)", { prefs.importMaxMb.toDouble() },
-            { prefs.importMaxMb = it.toInt() })
-        number("Rolling-distance window (days)", { prefs.rollingWindowDays.toDouble() },
-            { prefs.rollingWindowDays = it.toInt() })
-        number("Weekly trend chart weeks", { prefs.chartWeeks.toDouble() },
-            { prefs.chartWeeks = it.toInt() })
+        slider("GPX import max size", 1.0, 20.0, 1.0, { prefs.importMaxMb.toDouble() },
+            { prefs.importMaxMb = it.toInt() }, "MB", 10.0)
+        slider("Rolling-distance window", 7.0, 53.0, 1.0, { prefs.rollingWindowDays.toDouble() },
+            { prefs.rollingWindowDays = it.toInt() }, "d", 30.0)
+        slider("Weekly trend chart weeks", 2.0, 14.0, 1.0, { prefs.chartWeeks.toDouble() },
+            { prefs.chartWeeks = it.toInt() }, "wk", 8.0)
 
         section("Diagnostics & reliability")
         switch("Battery benchmarking", { prefs.batteryBenchmarkEnabled },
             { prefs.batteryBenchmarkEnabled = it })
-        number("Degraded-GPS notification threshold (m)", { prefs.degradedGpsThresholdMeters.toDouble() },
-            { prefs.degradedGpsThresholdMeters = it.toFloat() })
-        number("Rating: excellent (m)", { prefs.ratingExcellentMeters.toDouble() },
-            { prefs.ratingExcellentMeters = it.toFloat() })
-        number("Rating: good (m)", { prefs.ratingGoodMeters.toDouble() },
-            { prefs.ratingGoodMeters = it.toFloat() })
-        number("Rating: fair (m)", { prefs.ratingFairMeters.toDouble() },
-            { prefs.ratingFairMeters = it.toFloat() })
-        number("Rating: poor (m)", { prefs.ratingPoorMeters.toDouble() },
-            { prefs.ratingPoorMeters = it.toFloat() })
-        number("Crash-recovery persist interval (ms)", { prefs.statePersistIntervalMs.toDouble() },
-            { prefs.statePersistIntervalMs = it.toLong() })
+        slider("Degraded-GPS notification threshold", 5.0, 45.0, 5.0, { prefs.degradedGpsThresholdMeters.toDouble() },
+            { prefs.degradedGpsThresholdMeters = it.toFloat() }, "m", 25.0)
+        slider("Rating: excellent", 1.0, 9.0, 1.0, { prefs.ratingExcellentMeters.toDouble() },
+            { prefs.ratingExcellentMeters = it.toFloat() }, "m", 5.0)
+        slider("Rating: good", 2.0, 18.0, 2.0, { prefs.ratingGoodMeters.toDouble() },
+            { prefs.ratingGoodMeters = it.toFloat() }, "m", 10.0)
+        slider("Rating: fair", 4.0, 36.0, 2.0, { prefs.ratingFairMeters.toDouble() },
+            { prefs.ratingFairMeters = it.toFloat() }, "m", 20.0)
+        slider("Rating: poor", 10.0, 90.0, 5.0, { prefs.ratingPoorMeters.toDouble() },
+            { prefs.ratingPoorMeters = it.toFloat() }, "m", 50.0)
+        slider("Crash-recovery persist interval", 1.0, 10.0, 1.0, { prefs.statePersistIntervalMs / 1000.0 },
+            { prefs.statePersistIntervalMs = (it * 1000).toLong() }, "s", 5.0)
 
         section("Route map colouring")
-        number("Reliable segment max error (m)", { prefs.mapReliableMeters.toDouble() },
-            { prefs.mapReliableMeters = it.toFloat() })
-        number("Assisted segment max error (m)", { prefs.mapAssistedMeters.toDouble() },
-            { prefs.mapAssistedMeters = it.toFloat() })
+        slider("Reliable segment max error", 2.0, 18.0, 1.0, { prefs.mapReliableMeters.toDouble() },
+            { prefs.mapReliableMeters = it.toFloat() }, "m", 10.0)
+        slider("Assisted segment max error", 5.0, 45.0, 5.0, { prefs.mapAssistedMeters.toDouble() },
+            { prefs.mapAssistedMeters = it.toFloat() }, "m", 25.0)
 
         section("About")
         label("Personal Running Tracker v0.1.0\nOffline-first, sensor-assisted GPS tracking.\nAll data stays on this device.")
@@ -174,15 +175,55 @@ class SettingsActivity : AppCompatActivity() {
         })
     }
 
-    private fun number(labelText: String, get: () -> Double, set: (Double) -> Unit) {
-        container.addView(labelView(labelText))
-        container.addView(EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(formatForEdit(get()))
-            setOnFocusChangeListener { _, hasFocus ->
-                if (!hasFocus) parseNumber(text.toString())?.let { set(it) }
-            }
-        })
+    private fun slider(
+        labelText: String,
+        minVal: Double,
+        maxVal: Double,
+        stepVal: Double,
+        get: () -> Double,
+        set: (Double) -> Unit,
+        unit: String,
+        defaultValue: Double,
+    ) {
+        val valueView = TextView(this).apply {
+            textSize = 13f
+            setPadding(0, 12, 0, 2)
+        }
+        val hintView = TextView(this).apply {
+            text = "range %.4g–%.4g %s · default %.4g %s".format(minVal, maxVal, unit, defaultValue, unit)
+            textSize = 11f
+            setTextColor(resources.getColor(R.color.rt_on_surface_variant, theme))
+        }
+        val bar = SeekBar(this).apply {
+            val steps = ((maxVal - minVal) / stepVal).toInt().coerceAtLeast(1)
+            max = steps
+            progress = (((get() - minVal) / stepVal).toInt().coerceIn(0, steps))
+            valueView.text = formatValue(get(), stepVal) + " $unit"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(b: SeekBar?, p: Int, fromUser: Boolean) {
+                    val value = (minVal + p * stepVal).snap()
+                    if (fromUser) {
+                        set(value)
+                        valueView.text = formatValue(value, stepVal) + " $unit"
+                    }
+                }
+                override fun onStartTrackingTouch(b: SeekBar?) {}
+                override fun onStopTrackingTouch(b: SeekBar?) {}
+            })
+        }
+        container.addView(valueView)
+        container.addView(bar)
+        container.addView(hintView)
+    }
+
+    private fun Double.snap(): Double {
+        val decimals = if (this < 1.0) 2 else if (this == this.toLong().toDouble()) 0 else 1
+        return "%.${decimals}f".format(this).toDouble()
+    }
+
+    private fun formatValue(value: Double, step: Double): String {
+        val decimals = if (step < 0.1) 2 else if (step == step.toLong().toDouble()) 0 else 1
+        return "%.${decimals}f".format(value)
     }
 
     private fun text(labelText: String, get: () -> String, set: (String) -> Unit) {

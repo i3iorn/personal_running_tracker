@@ -50,6 +50,8 @@ class MainActivity : ComponentActivity() {
             val svc = trackingService
             if (svc != null && svc.isRunningFlag()) {
                 val prefs = TrackingPreferences(this@MainActivity)
+                // Screen-on preference only applies while a run is active
+                binding.root.keepScreenOn = prefs.screenOnEnabled
                 binding.elapsedText.text = formatElapsed(svc.currentElapsedMs())
                 val km = svc.currentDistanceMeters() / 1000.0
                 binding.distanceText.text = String.format("%.2f km", km)

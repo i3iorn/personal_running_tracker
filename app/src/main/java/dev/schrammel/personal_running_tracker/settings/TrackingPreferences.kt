@@ -78,6 +78,11 @@ class TrackingPreferences(context: Context) {
         get() = prefs.getBoolean("battery_benchmark_enabled", false)
         set(value) { prefs.edit().putBoolean("battery_benchmark_enabled", value).apply() }
 
+    // Crash-recovery companion for the run_state row (moving-time of the live segment)
+    var runStateMovingSegmentMs: Long
+        get() = prefs.getLong("run_state_moving_segment_ms", 0L)
+        set(value) { prefs.edit().putLong("run_state_moving_segment_ms", value).apply() }
+
     // ----- New settings from the security/performance pass -----
     // GPX import size cap in MB (DoS guard)
     var importMaxMb: Int
