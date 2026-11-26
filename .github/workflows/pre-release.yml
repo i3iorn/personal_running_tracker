@@ -11,6 +11,9 @@ concurrency:
   group: prerelease-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   pre-release:
     name: Pre-Release Build & Verify
@@ -51,7 +54,7 @@ jobs:
           ls -lh "$APK"
 
       - name: Create pre-release tag
-        if: github.ref != 'refs/tags/latest-pre'
+        if: github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -59,7 +62,7 @@ jobs:
           git push -f origin latest-pre
 
       - name: Create GitHub Pre-Release
-        if: github.ref != 'refs/tags/latest-pre'
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-pre
