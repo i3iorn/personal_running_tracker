@@ -30,7 +30,7 @@ class BackupManager(private val context: Context) {
             for (suffix in listOf("", "-wal", "-shm")) {
                 val f = File(dbFile.parentFile, dbFile.name + suffix)
                 if (f.exists()) {
-                    zipOut.putNextEntry(ZipEntry("database.db" + suffix))
+                    zipOut.putNextEntry(ZipEntry(dbFile.name + suffix))
                     val dbIn = FileInputStream(f)
                     dbIn.copyTo(zipOut)
                     dbIn.close()
@@ -65,15 +65,19 @@ class BackupManager(private val context: Context) {
             val zipIn = ZipInputStream(FileInputStream(backupFile))
             var entry = zipIn.nextEntry
             while (entry != null) {
-                if (entry.name.startsWith("database.db")) {
-                    val target = File(dbFile.parentFile, entry.name)
+                if (entry.name == dbFile.name || entry.name.startsWith(dbFile.name + "-")) {
+                    val target = safeTarget(File(dbFile.parentFile, entry.name), dbFile.parentFile)
+                        ?: throw SecurityException("Blocked path traversal in backup: ${entry.name}")
                     val dbOut = FileOutputStream(target)
                     zipIn.copyTo(dbOut)
                     dbOut.close()
                 } else if (entry.name.startsWith("prefs/")) {
                     val prefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
                     prefsDir.mkdirs()
-                    val out = FileOutputStream(File(prefsDir, entry.name.removePrefix("prefs/")))
+                    val target = safeTarget(
+                        File(prefsDir, entry.name.removePrefix("prefs/")), prefsDir)
+                        ?: throw SecurityException("Blocked path traversal in backup: ${entry.name}")
+                    val out = FileOutputStream(target)
                     zipIn.copyTo(out)
                     out.close()
                 }
@@ -89,6 +93,15 @@ class BackupManager(private val context: Context) {
     fun listBackups(): List<File> {
         if (!backupDir.exists()) return emptyList()
         return backupDir.listFiles()?.filter { it.name.endsWith(".zip") }?.sortedByDescending { it.lastModified() }?.toList() ?: emptyList()
+    }
+
+    /** Zip-slip guard: the resolved target must stay inside the base directory. */
+    private fun safeTarget(candidate: File, baseDir: File): File? {
+        val canonicalBase = baseDir.canonicalFile
+        val canonical = candidate.canonicalFile
+        return if (canonical.path.startsWith(canonicalBase.path + File.separator) ||
+            canonical.path == canonicalBase.path
+        ) canonical else null
     }
 
     private fun createManifest(): String {

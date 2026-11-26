@@ -4,12 +4,14 @@
  * from TrackingService diagnostics.
  */
 object AccuracyBenchmarkCalculator {
-    /** Ratio of fused distance to raw GPS distance for a single segment. */
+    /** Relative error of the fused distance against the raw GPS distance:
+     * |fused - gps| / max(fused, gps), so both over- and under-estimates count. */
     fun ratio(fusedDistanceMeters: Double, gpsDistanceMeters: Double): Float? {
-        if (gpsDistanceMeters <= 0.0) return null
-        val diff = (fusedDistanceMeters - gpsDistanceMeters).coerceAtLeast(0.0)
-        val total = gpsDistanceMeters + diff
-        return if (total > 0.0) ((diff / total).coerceAtMost(1.0)).toFloat() else 0.0f
+        if (gpsDistanceMeters <= 0.0 || fusedDistanceMeters < 0.0) return null
+        val diff = kotlin.math.abs(fusedDistanceMeters - gpsDistanceMeters)
+        val reference = maxOf(fusedDistanceMeters, gpsDistanceMeters)
+        if (reference <= 0.0) return 0.0f
+        return (diff / reference).coerceAtMost(1.0).toFloat()
     }
 
     /** Maximum acceptable fused-vs-GPS delta across all segments of a run. */
