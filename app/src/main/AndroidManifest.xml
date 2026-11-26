@@ -24,7 +24,7 @@
 
         <!-- Foreground service declared here; implemented in Phase 2. -->
         <service android:name=".tracking.TrackingService" android:exported="false"
-                android:foregroundServiceType="location">
+                android:foregroundServiceType="location" />
 
     </application>
 
