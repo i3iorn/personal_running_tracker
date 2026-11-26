@@ -1,13 +1,17 @@
 package dev.schrammel.personal_running_tracker
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import android.app.Application
 import dev.schrammel.personal_running_tracker.data.AppDatabase
 import dev.schrammel.personal_running_tracker.data.RunRepository
@@ -22,6 +26,16 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var repository: RunRepository
+
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            actuallyStartRun()
+        } else {
+            binding.statusText.text = "Location permission required"
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,6 +76,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startRun() {
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        if (granted == PackageManager.PERMISSION_GRANTED) {
+            actuallyStartRun()
+        } else {
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    private fun actuallyStartRun() {
         startService(Intent(this, TrackingService::class.java).apply {
             action = TrackingService.ACTION_START_RUN
         })
