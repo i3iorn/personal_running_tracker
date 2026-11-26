@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true"
+    android:background="@color/rt_background">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp"
+        android:text="Settings"
+        android:textColor="@color/rt_primary"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView style="@style/SettingsLabel" android:text="Tracking profile" />
+            <Spinner android:id="@+id/profileSpinner" style="@style/SettingsControl" />
+
+            <TextView style="@style/SettingsLabel" android:text="Distance unit" />
+            <Spinner android:id="@+id/distanceUnitSpinner" style="@style/SettingsControl" />
+
+            <TextView style="@style/SettingsLabel" android:text="Pace unit" />
+            <Spinner android:id="@+id/paceUnitSpinner" style="@style/SettingsControl" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/autoPauseSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Automatic pause" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Auto-pause sensitivity"
+                android:textColor="@color/rt_on_surface_variant"
+                android:textSize="12sp" />
+
+            <SeekBar
+                android:id="@+id/sensitivitySeek"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="10" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/screenOnSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Keep screen on during run" />
+
+            <TextView
+                android:id="@+id/aboutText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:textColor="@color/rt_on_surface_variant"
+                android:textSize="12sp"
+                android:text="Personal Running Tracker v0.1.0\nOffline-first, sensor-assisted GPS tracking.\nAll data stays on this device." />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

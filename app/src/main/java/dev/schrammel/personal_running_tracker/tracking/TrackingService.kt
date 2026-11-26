@@ -9,10 +9,12 @@ import android.location.LocationManager
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.room.withTransaction
 import dev.schrammel.personal_running_tracker.data.AppDatabase
 import dev.schrammel.personal_running_tracker.data.GpsEntity
 import dev.schrammel.personal_running_tracker.data.RunEntity
 import dev.schrammel.personal_running_tracker.data.RunDiagnostic
+import dev.schrammel.personal_running_tracker.data.RunStateEntity
 import dev.schrammel.personal_running_tracker.data.SplitEntity
 import dev.schrammel.personal_running_tracker.domain.split.GpsPoint
 import dev.schrammel.personal_running_tracker.domain.split.SplitCalculator
@@ -62,6 +64,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private var sensorFixCount: Int = 0
     private var maxAccuracyMetersSeen: Float = 0f
     private var lastAccuracyMeters: Float? = null
+    private var lastNotificationDegraded: Boolean = false
     private val recentSpeeds = ArrayDeque<Pair<Long, Float>>() // (timeMs, speedMps)
     @Volatile private var lastFinishedRunId: Long = 0L
 
@@ -92,6 +95,42 @@ class TrackingService : Service(), SensorAdapter.Callback {
         database = AppDatabase.getInstance(getApplication() as Application)
         prefs = TrackingPreferences(this)
         createNotificationChannel()
+        serviceScope.launch { restoreInterruptedRun() }
+        serviceScope.launch {
+            // Persist tracking state every 5 s while a run is active (spec §14)
+            while (true) {
+                kotlinx.coroutines.delay(5_000L)
+                if (isRunning) persistState()
+            }
+        }
+    }
+
+    /** Resume an interrupted run's counters after process death. */
+    private suspend fun restoreInterruptedRun() {
+        val state = database.runStateDao().get() ?: return
+        if (!state.isRunning) return
+        runId = state.runId
+        isRunning = true
+        isPaused = state.isPaused
+        accumElapsedMs = state.accumElapsedMs
+        accumMovingMs = state.accumMovingMs
+        segmentStartMs = System.currentTimeMillis()
+        currentDistanceMeters = state.distanceMeters
+        stepCount = state.stepCount
+        trackingProfile = state.trackingProfile
+        batteryStartPct = state.batteryStartPct
+    }
+
+    private suspend fun persistState() {
+        database.runStateDao().upsert(
+            RunStateEntity(
+                runId = runId, isRunning = isRunning, isPaused = isPaused,
+                accumElapsedMs = accumElapsedMs, accumMovingMs = accumMovingMs,
+                segmentStartMs = segmentStartMs, distanceMeters = currentDistanceMeters,
+                stepCount = stepCount, trackingProfile = trackingProfile,
+                batteryStartPct = batteryStartPct,
+            )
+        )
     }
 
     private fun createNotificationChannel() {
@@ -146,6 +185,23 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val bm = getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
         val level = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
         return if (level in 1..100) level else null
+    }
+
+    /** Surface degraded GPS quality on the foreground notification (spec §14). */
+    private fun updateNotificationText(accuracy: Float) {
+        val degraded = accuracy > 25f
+        if (degraded == lastNotificationDegraded) return
+        lastNotificationDegraded = degraded
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(
+            1,
+            NotificationCompat.Builder(this, "tracking_service_channel")
+                .setContentTitle("Personal Running Tracker")
+                .setContentText(if (degraded) "Tracking — poor GPS, sensor-assisted" else "Tracking")
+                .setSmallIcon(dev.schrammel.personal_running_tracker.R.drawable.ic_runner)
+                .setOngoing(true)
+                .build()
+        )
     }
 
     private fun startForegroundIfNeeded() {
@@ -237,6 +293,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         if (accuracy > maxAccuracyMetersSeen) maxAccuracyMetersSeen = accuracy
         lastAccuracyMeters = accuracy
         recentSpeeds.addLast(timeMs to location.speed.coerceAtLeast(0f))
+        if (isRunning) updateNotificationText(accuracy)
         lastLat = lat
         lastLng = lng
 
@@ -302,7 +359,9 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val distance = currentDistanceMeters
         if (runId > 0L) {
             serviceScope.launch {
-                database.runDao().insertRun(
+                // Single transaction: run + diagnostics + splits commit or roll back together
+                database.withTransaction {
+                    database.runDao().insertRun(
                     RunEntity(
                         id = runId,
                         startTimestamp = now - elapsedMs,
@@ -324,9 +383,11 @@ class TrackingService : Service(), SensorAdapter.Callback {
                         createdAt = now,
                         modifiedAt = now
                     )
-                )
-                recordDiagnostics(runId, elapsedMs, distance)
-                computeAndStoreSplits(runId)
+                    )
+                    recordDiagnostics(runId, elapsedMs, distance)
+                    computeAndStoreSplits(runId)
+                }
+                database.runStateDao().clear()
             }
         }
         lastFinishedRunId = runId
@@ -405,6 +466,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         isPaused = false
         stopLocationUpdates()
         stopSensorUpdates()
+        serviceScope.launch { database.runStateDao().clear() }
         stopForeground(0)
         stopSelf()
     }

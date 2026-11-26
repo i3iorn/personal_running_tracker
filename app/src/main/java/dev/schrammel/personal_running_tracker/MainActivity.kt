@@ -130,8 +130,9 @@ class MainActivity : ComponentActivity() {
         binding.importButton.setOnClickListener { importGpx() }
         binding.backupButton.setOnClickListener { backupData() }
         binding.restoreButton.setOnClickListener { restoreData() }
+        setupHistoryList()
         binding.runHistoryList.setOnItemClickListener { _, _, position, _ ->
-            val run = repository.allRuns.value.getOrNull(position) ?: return@setOnItemClickListener
+            val run = displayedRuns.getOrNull(position) ?: return@setOnItemClickListener
             startActivity(
                 android.content.Intent(this, RunDetailActivity::class.java)
                     .putExtra(RunDetailActivity.EXTRA_RUN_ID, run.id)
@@ -272,6 +273,58 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private var filterDays: Int? = null
+    private var displayedRuns: List<dev.schrammel.personal_running_tracker.model.RunRecord> = emptyList()
+    private var allRunsCache: List<dev.schrammel.personal_running_tracker.model.RunRecord> = emptyList()
+    private lateinit var historyAdapter: ArrayAdapter<String>
+
+    private fun setupHistoryList() {
+        historyAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf())
+        binding.runHistoryList.adapter = historyAdapter
+        lifecycleScope.launch {
+            repository.allRuns.collect { runs ->
+                allRunsCache = runs
+                applyHistoryFilter()
+            }
+        }
+        binding.filterButton.setOnClickListener { showFilterDialog() }
+        binding.titleText.setOnClickListener {
+            startActivity(android.content.Intent(this, SettingsActivity::class.java))
+        }
+    }
+
+    private fun applyHistoryFilter() {
+        displayedRuns = allRunsCache.filter { run ->
+            filterDays == null ||
+                run.startTimestamp >= System.currentTimeMillis() - filterDays!! * 86_400_000L
+        }
+        val fmt = java.text.SimpleDateFormat("MMM d HH:mm", java.util.Locale.US)
+        historyAdapter.clear()
+        historyAdapter.addAll(displayedRuns.map { run ->
+            "%s  •  %.2f km  •  %d:%02d:%02d".format(
+                fmt.format(java.util.Date(run.startTimestamp)),
+                run.distanceMeters / 1000.0,
+                run.elapsedDurationSeconds / 3600,
+                (run.elapsedDurationSeconds % 3600) / 60,
+                run.elapsedDurationSeconds % 60,
+            )
+        })
+    }
+
+    private fun showFilterDialog() {
+        val options = arrayOf("All", "Last 7 days", "Last 30 days", "Last 90 days")
+        val values = listOf<Int?>(null, 7, 30, 90)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Filter history")
+            .setSingleChoiceItems(options, values.indexOf(filterDays)) { dialog, which ->
+                filterDays = values[which]
+                binding.filterButton.text = "Filter: ${options[which]}"
+                dialog.dismiss()
+                applyHistoryFilter()
+            }
+            .show()
     }
 
     private fun cycleTrackingProfile() {

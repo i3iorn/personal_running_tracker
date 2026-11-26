@@ -29,6 +29,7 @@
 
         <activity android:name=".RunDetailActivity" android:exported="false" />
         <activity android:name=".StatisticsActivity" android:exported="false" />
+        <activity android:name=".SettingsActivity" android:exported="false" />
 
         <!-- Foreground service declared here; implemented in Phase 2. -->
         <service android:name=".tracking.TrackingService" android:exported="false"

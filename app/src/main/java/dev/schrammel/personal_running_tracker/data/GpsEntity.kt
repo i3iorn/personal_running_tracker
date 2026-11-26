@@ -1,10 +1,11 @@
 package dev.schrammel.personal_running_tracker.data
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import dev.schrammel.personal_running_tracker.model.GpsObservation
 
-@Entity(tableName = "gps_observations")
+@Entity(tableName = "gps_observations", indices = [Index("runId", "timestamp")])
 data class GpsEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
     val runId: Long,
