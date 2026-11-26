@@ -75,7 +75,7 @@ jobs:
           git tag -f "$TAG"
           git push -f origin "$TAG"
 
-      - name: Create GitHub Pre-Release
+      - name: Create GitHub Pre-Release (draft)
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
@@ -83,7 +83,16 @@ jobs:
           name: Pre-Release ${{ env.TAG }}
           files: app/build/outputs/apk/debug/app-debug.apk
           generate_release_notes: true
-          draft: false
+          draft: true
           prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish draft pre-release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
