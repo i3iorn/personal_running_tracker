@@ -74,13 +74,15 @@ class TrackingService : Service(), SensorAdapter.Callback {
     fun currentDistanceMeters(): Double = currentDistanceMeters
     fun currentAccuracyMeters(): Float? = lastAccuracyMeters
 
-    /** Smoothed current speed (m/s): mean GPS speed over the last 10 s; null when stationary. */
+    /** Smoothed current speed (m/s): mean GPS speed over the configured window; null when stationary. */
     fun currentSmoothedSpeedMps(): Double? {
-        val cutoff = System.currentTimeMillis() - 10_000L
+        val windowMs = prefs.paceSmoothingWindowMs
+        val minSpeed = prefs.paceMinSpeedMps.toDouble()
+        val cutoff = System.currentTimeMillis() - windowMs
         recentSpeeds.removeAll { it.first < cutoff }
         if (recentSpeeds.isEmpty()) return null
         val mean = recentSpeeds.map { it.second }.average()
-        return if (mean >= 0.3) mean else null
+        return if (mean >= minSpeed) mean else null
     }
 
     inner class LocalBinder : android.os.Binder() {
@@ -99,7 +101,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         serviceScope.launch {
             // Persist tracking state every 5 s while a run is active (spec §14)
             while (true) {
-                kotlinx.coroutines.delay(5_000L)
+                kotlinx.coroutines.delay(prefs.statePersistIntervalMs.coerceAtLeast(1_000L))
                 if (isRunning) persistState()
             }
         }
@@ -189,7 +191,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
 
     /** Surface degraded GPS quality on the foreground notification (spec §14). */
     private fun updateNotificationText(accuracy: Float) {
-        val degraded = accuracy > 25f
+        val degraded = accuracy > prefs.degradedGpsThresholdMeters
         if (degraded == lastNotificationDegraded) return
         lastNotificationDegraded = degraded
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -238,8 +240,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val minTime = prefs.tuningGpsMinIntervalMs.coerceAtLeast(1_000L)
         val minDistance = prefs.tuningGpsMinDistanceMeters.coerceAtLeast(1f)
         return when (profile) {
-            "Saver" -> Pair(TimeUnit.MINUTES.toMillis(1L), 100f)
-            "High Accuracy" -> Pair(TimeUnit.SECONDS.toMillis(5L), 10f)
+            "Saver" -> Pair(prefs.saverGpsMinIntervalMs, prefs.saverGpsMinDistanceMeters)
+            "High Accuracy" -> Pair(prefs.highAccuracyGpsMinIntervalMs, prefs.highAccuracyGpsMinDistanceMeters)
             else -> Pair(minTime, minDistance)
         }
     }
@@ -408,7 +410,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val points = database.gpsDao().getGpsForRun(runId).map {
             GpsPoint(it.latitude, it.longitude, it.altitudeMeters, it.timestamp)
         }
-        val splits = SplitCalculator.computeSplits(points)
+        val splits = SplitCalculator.computeSplits(points, prefs.splitLengthMeters)
         if (splits.isNotEmpty()) {
             database.splitDao().insertSplits(splits.map {
                 SplitEntity(
@@ -438,10 +440,10 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val maxAccuracy = if (gpsFixCount > 0) maxAccuracyMetersSeen else 0f
         val accuracyRating = when {
             gpsFixCount == 0 -> null
-            maxAccuracy <= 5f -> 5
-            maxAccuracy <= 10f -> 4
-            maxAccuracy <= 20f -> 3
-            maxAccuracy <= 50f -> 2
+            maxAccuracy <= prefs.ratingExcellentMeters -> 5
+            maxAccuracy <= prefs.ratingGoodMeters -> 4
+            maxAccuracy <= prefs.ratingFairMeters -> 3
+            maxAccuracy <= prefs.ratingPoorMeters -> 2
             else -> 1
         }
 

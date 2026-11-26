@@ -49,13 +49,14 @@ class MainActivity : ComponentActivity() {
         override fun run() {
             val svc = trackingService
             if (svc != null && svc.isRunningFlag()) {
+                val prefs = TrackingPreferences(this@MainActivity)
                 binding.elapsedText.text = formatElapsed(svc.currentElapsedMs())
                 val km = svc.currentDistanceMeters() / 1000.0
                 binding.distanceText.text = String.format("%.2f km", km)
                 val accuracy = svc.currentAccuracyMeters()
                 val speed = svc.currentSmoothedSpeedMps()
                 // Confidence gate: hide instantaneous pace when GPS quality is poor
-                if (speed != null && accuracy != null && accuracy <= 20f) {
+                if (speed != null && accuracy != null && accuracy <= prefs.paceMaxAccuracyMeters) {
                     val paceSecPerKm = 1000.0 / speed
                     binding.paceText.text = String.format("%d:%02d /km",
                         (paceSecPerKm / 60).toInt(), (paceSecPerKm % 60).toInt())

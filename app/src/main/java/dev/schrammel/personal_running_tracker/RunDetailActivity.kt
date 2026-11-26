@@ -97,9 +97,10 @@ class RunDetailActivity : AppCompatActivity() {
                             Point.fromLngLat(gps[i].longitude, gps[i].latitude),
                         )
                         val acc = gps[i - 1].horizontalAccuracyMeters
+                        val prefs = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this@RunDetailActivity)
                         val key = when {
-                            acc <= 10f -> "reliable"
-                            acc <= 25f -> "assisted"
+                            acc <= prefs.mapReliableMeters -> "reliable"
+                            acc <= prefs.mapAssistedMeters -> "assisted"
                             else -> "poor"
                         }
                         buckets.getValue(key).add(

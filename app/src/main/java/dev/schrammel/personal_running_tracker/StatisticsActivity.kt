@@ -76,6 +76,18 @@ class StatisticsActivity : AppCompatActivity() {
             findViewById<dev.schrammel.personal_running_tracker.view.BarChartView>(R.id.rollingChart)
                 .setValues(rolling.reversed().map { it.second.toFloat() })
 
+            // Weekly trends (gap fix: distance + pace trend charts) and run-length histogram
+            val trends = StatisticsEngine.weeklyTrends(allRuns, 8, now)
+            findViewById<dev.schrammel.personal_running_tracker.view.BarChartView>(R.id.weeklyDistanceChart)
+                .setValues(trends.map { it.second.toFloat() })
+            val paceBars = trends.map { it.third }.filter { it > 0 }
+            val maxPace = paceBars.maxOrNull() ?: 1.0
+            findViewById<dev.schrammel.personal_running_tracker.view.BarChartView>(R.id.weeklyPaceChart)
+                .setValues(trends.map { if (it.third > 0) (maxPace - it.third + maxPace * 0.1).toFloat() else 0f })
+            findViewById<TextView>(R.id.distributionText).text =
+                StatisticsEngine.distanceDistribution(allRuns)
+                    .joinToString("\n") { "%-10s %d".format(it.first, it.second) }
+
             prText.text = withContext(Dispatchers.IO) { computePersonalRecords(db) }
         }
     }
@@ -112,9 +124,14 @@ class StatisticsActivity : AppCompatActivity() {
         }
     }
 
-    /** Best times over standard distances, computed from raw GPS observations (spec §8.3). */
+    /** Best times over user-configurable distances, computed from raw GPS observations (spec §8.3). */
     private suspend fun computePersonalRecords(db: AppDatabase): String {
-        val targets = listOf(1000.0, 3000.0, 5000.0, 10000.0)
+        val prefs = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this)
+        val targets = prefs.prDistanceKmList.split(",")
+            .mapNotNull { it.trim().toDoubleOrNull() }
+            .filter { it > 0 }
+            .map { it * 1000.0 }
+        if (targets.isEmpty()) return "No PR distances configured"
         val best = mutableMapOf<Double, PersonalRecord>()
         val runs = db.runDao().observeAllRuns().first()
         for (run in runs) {

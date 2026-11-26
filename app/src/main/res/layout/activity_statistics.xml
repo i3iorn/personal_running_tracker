@@ -70,6 +70,57 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
+                android:text="WEEKLY DISTANCE (LAST 8 WEEKS)"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.1"
+                android:textColor="@color/rt_on_surface_variant" />
+
+            <dev.schrammel.personal_running_tracker.view.BarChartView
+                android:id="@+id/weeklyDistanceChart"
+                android:layout_width="match_parent"
+                android:layout_height="140dp"
+                android:layout_marginTop="4dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="WEEKLY AVG PACE (LOWER = FASTER)"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.1"
+                android:textColor="@color/rt_on_surface_variant" />
+
+            <dev.schrammel.personal_running_tracker.view.BarChartView
+                android:id="@+id/weeklyPaceChart"
+                android:layout_width="match_parent"
+                android:layout_height="140dp"
+                android:layout_marginTop="4dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="RUN LENGTH DISTRIBUTION"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.1"
+                android:textColor="@color/rt_on_surface_variant" />
+
+            <TextView
+                android:id="@+id/distributionText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:fontFamily="monospace"
+                android:textColor="@color/rt_on_surface"
+                android:textSize="13sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
                 android:text="PERSONAL RECORDS"
                 android:textSize="11sp"
                 android:textStyle="bold"

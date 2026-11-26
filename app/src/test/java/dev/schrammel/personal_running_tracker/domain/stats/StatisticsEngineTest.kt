@@ -126,6 +126,48 @@ class StatisticsEngineTest {
     }
 
     @Test
+    fun `weeklyTrends buckets runs by Monday-start week`() {
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        cal.set(2026, 10, 25, 12, 0, 0) // Wed 25 Nov 2026
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        val wednesday = cal.timeInMillis
+        val runs = listOf(
+            run(1, wednesday, 5000.0, 1800),          // this week (Mon 23 Nov)
+            run(2, wednesday - 3 * day, 10000.0, 3600), // still this week (Sun 22 Nov)
+            run(3, wednesday - 8 * day, 4000.0, 1600),  // previous week
+        )
+        val trends = StatisticsEngine.weeklyTrends(runs, 2, wednesday)
+        assertEquals(2, trends.size)
+        assertEquals(5000.0, trends[1].second, 0.01)   // current week (Mon 23 Nov): run1 only
+        assertEquals(14000.0, trends[0].second, 0.01)  // previous week: run2 + run3
+        // avg pace of current week: 1800 s / 5 km = 360 s/km
+        assertEquals(360.0, trends[1].third, 0.01)
+    }
+
+    @Test
+    fun `weeklyTrends empty weeks are zero`() {
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        cal.set(2026, 10, 25, 12, 0, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+        val trends = StatisticsEngine.weeklyTrends(emptyList(), 4, cal.timeInMillis)
+        assertEquals(4, trends.size)
+        assertTrue(trends.all { it.second == 0.0 && it.third == 0.0 })
+    }
+
+    @Test
+    fun `distanceDistribution buckets runs by length`() {
+        val runs = listOf(
+            run(1, now, 2000.0, 600),      // 0-3
+            run(2, now, 4000.0, 1200),     // 3-5
+            run(3, now, 8000.0, 2400),     // 5-10
+            run(4, now, 25000.0, 9000),    // >21.1
+            run(5, now, 21000.0, 7200),    // 10-21.1
+        )
+        val dist = StatisticsEngine.distanceDistribution(runs)
+        assertEquals(listOf(1, 1, 1, 1, 1), dist.map { it.second })
+        assertEquals(5, dist.size)
+    }
+
+    @Test
     fun `faster recent pace wins as fastest run`() {
         val slow = run(1, now - day, 5000.0, 3000)   // 360 s/km
         val fast = run(2, now, 5000.0, 1500)         // 180 s/km

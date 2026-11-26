@@ -197,6 +197,52 @@ object StatisticsEngine {
         return best
     }
 
+    /** Weekly buckets (ISO Monday start) for trend charts: distance and distance-weighted avg pace. */
+    fun weeklyTrends(
+        runs: List<dev.schrammel.personal_running_tracker.model.RunRecord>,
+        weeks: Int,
+        nowMs: Long,
+    ): List<Triple<Long, Double, Double>> {
+        require(weeks > 0)
+        val weekMs = 7L * 86_400_000L
+        // Align week boundaries to Monday 00:00 UTC
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = nowMs }
+        val dayOfWeek = (cal.get(Calendar.DAY_OF_WEEK) + 5) % 7 // Mon=0..Sun=6
+        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+        val currentWeekStart = cal.timeInMillis - dayOfWeek * 86_400_000L
+        return (weeks - 1 downTo 0).map { weeksAgo ->
+            val start = currentWeekStart - weeksAgo * weekMs
+            val end = start + weekMs
+            val inWeek = runs.filter { it.startTimestamp in start until end }
+            val distance = inWeek.sumOf { it.distanceMeters }
+            val totalSeconds = inWeek.sumOf { it.elapsedDurationSeconds }
+            val avgPacePerKm = if (distance > 0) totalSeconds / distance * 1000.0 else 0.0
+            Triple(start, distance, avgPacePerKm)
+        }
+    }
+
+    /** Histogram of run lengths over fixed km buckets, for distance-distribution charts. */
+    fun distanceDistribution(
+        runs: List<dev.schrammel.personal_running_tracker.model.RunRecord>,
+        bucketEdgesKm: List<Double> = listOf(3.0, 5.0, 10.0, 21.1),
+    ): List<Pair<String, Int>> {
+        val labels = mutableListOf<String>()
+        var lower = 0.0
+        for (edge in bucketEdgesKm) {
+            labels.add("%.0f-%.0f km".format(lower, edge))
+            lower = edge
+        }
+        labels.add("> %.0f km".format(lower))
+        val counts = MutableList(labels.size) { 0 }
+        for (run in runs) {
+            val km = run.distanceMeters / 1000.0
+            val idx = bucketEdgesKm.indexOfFirst { km < it }.let { if (it == -1) labels.size - 1 else it }
+            counts[idx]++
+        }
+        return labels.zip(counts)
+    }
+
     private fun percent(current: Double, base: Double): Double? =
         if (base != 0.0) (current / base - 1) * 100 else null
 
