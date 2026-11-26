@@ -1,11 +1,13 @@
 package dev.schrammel.personal_running_tracker.data
 
 import android.app.Application
+import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 @TypeConverters(Converters::class)
+@Database(entities = [RunEntity::class, GpsEntity::class, SensorEntity::class, EstimatedPositionEntity::class], version = 1, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun runDao(): RunDao
     abstract fun gpsDao(): GpsDao
