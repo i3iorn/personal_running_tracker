@@ -83,6 +83,14 @@ class SettingsActivity : AppCompatActivity() {
         text("Personal record distances (km, comma separated)",
             { prefs.prDistanceKmList }, { prefs.prDistanceKmList = it })
 
+        section("Import & charts")
+        number("GPX import max size (MB)", { prefs.importMaxMb.toDouble() },
+            { prefs.importMaxMb = it.toInt() })
+        number("Rolling-distance window (days)", { prefs.rollingWindowDays.toDouble() },
+            { prefs.rollingWindowDays = it.toInt() })
+        number("Weekly trend chart weeks", { prefs.chartWeeks.toDouble() },
+            { prefs.chartWeeks = it.toInt() })
+
         section("Diagnostics & reliability")
         switch("Battery benchmarking", { prefs.batteryBenchmarkEnabled },
             { prefs.batteryBenchmarkEnabled = it })

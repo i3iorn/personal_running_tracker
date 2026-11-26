@@ -1,0 +1,14 @@
+<resources>
+    <!-- Dark-mode overrides: the base palette in values/colors.xml is light-themed.
+         With these, every screen (which uses the rt_ semantic colors) works in both modes. -->
+    <color name="rt_primary">#80CBC4</color>
+    <color name="rt_primary_dark">#00332E</color>
+    <color name="rt_secondary">#FFB74D</color>
+    <color name="rt_background">#121212</color>
+    <color name="rt_surface">#1E1E1E</color>
+    <color name="rt_on_surface">#E6E1E5</color>
+    <color name="rt_on_surface_variant">#CAC4D0</color>
+    <color name="rt_accent_green">#81C784</color>
+    <color name="rt_accent_red">#EF5350</color>
+    <color name="colorBackground">#121212</color>
+</resources>

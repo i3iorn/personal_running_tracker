@@ -8,6 +8,9 @@
         <item name="colorSurface">@color/rt_surface</item>
         <item name="colorOnSurface">@color/rt_on_surface</item>
         <item name="android:statusBarColor">@color/rt_primary_dark</item>
+        <item name="colorOnBackground">@color/rt_on_surface</item>
+        <item name="android:textColorPrimary">@color/rt_on_surface</item>
+        <item name="android:textColorSecondary">@color/rt_on_surface_variant</item>
         <item name="android:windowBackground">@color/rt_background</item>
     </style>
 

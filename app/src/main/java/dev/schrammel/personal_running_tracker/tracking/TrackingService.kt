@@ -170,7 +170,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
             lastLat = null
             lastLng = null
             runId = System.currentTimeMillis()
-            batteryStartPct = getBatteryLevel()
+            // Battery reads are binder calls; keep them off the UI/caller thread.
+            serviceScope.launch { batteryStartPct = getBatteryLevel() }
             gpsFixCount = 0
             sensorFixCount = 0
             maxAccuracyMetersSeen = 0f
@@ -400,7 +401,6 @@ class TrackingService : Service(), SensorAdapter.Callback {
     /** Fetched by MainActivity after finish to show the run summary. */
     suspend fun fetchLastRunSummary(): RunEntity? =
         lastFinishedRunId.takeIf { it > 0L }?.let { database.runDao().getRunById(it) }
-
     suspend fun fetchLastRunDiagnostic(): RunDiagnostic? =
         lastFinishedRunId.takeIf { it > 0L }?.let {
             database.runDiagnosticDao().getDiagnosticByRunId(it)

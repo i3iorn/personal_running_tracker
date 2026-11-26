@@ -40,6 +40,7 @@ class RunDetailActivity : AppCompatActivity() {
     private lateinit var mapView: MapView
     private lateinit var statsText: TextView
     private lateinit var splitsText: TextView
+    @Volatile private var routeBuckets: Map<String, List<Feature>>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,6 +65,29 @@ class RunDetailActivity : AppCompatActivity() {
             val gps = withContext(Dispatchers.IO) { db.gpsDao().getGpsForRun(runId) }
             val splits = withContext(Dispatchers.IO) { db.splitDao().getSplitsForRun(runId) }
 
+            // Build reliability buckets off the main thread (O(n) over all fixes)
+            val prefs = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this@RunDetailActivity)
+            withContext(Dispatchers.IO) {
+                if (gps.size >= 2) {
+                    val reliable = mutableListOf<Feature>()
+                    val assisted = mutableListOf<Feature>()
+                    val poor = mutableListOf<Feature>()
+                    for (i in 1 until gps.size) {
+                        val pts = listOf(
+                            Point.fromLngLat(gps[i - 1].longitude, gps[i - 1].latitude),
+                            Point.fromLngLat(gps[i].longitude, gps[i].latitude),
+                        )
+                        val feature = Feature.fromGeometry(LineString.fromLngLats(pts))
+                        when {
+                            gps[i - 1].horizontalAccuracyMeters <= prefs.mapReliableMeters -> reliable.add(feature)
+                            gps[i - 1].horizontalAccuracyMeters <= prefs.mapAssistedMeters -> assisted.add(feature)
+                            else -> poor.add(feature)
+                        }
+                    }
+                    routeBuckets = mapOf("reliable" to reliable, "assisted" to assisted, "poor" to poor)
+                }
+            }
+
             run?.let {
                 statsText.text = String.format(
                     "%.2f km  •  %d:%02d  •  %.1f km/h",
@@ -82,56 +106,36 @@ class RunDetailActivity : AppCompatActivity() {
                 )
             }
 
-            mapView.getMapAsync { map ->
-                map.setStyle("https://demotiles.maplibre.org/style.json") { style ->
-                    if (gps.size < 2) return@setStyle
-                    // One layer per reliability bucket: colour by each segment's fix accuracy
-                    val buckets = mapOf(
-                        "reliable" to mutableListOf<Feature>(),
-                        "assisted" to mutableListOf<Feature>(),
-                        "poor" to mutableListOf<Feature>(),
-                    )
-                    for (i in 1 until gps.size) {
-                        val pts = listOf(
-                            Point.fromLngLat(gps[i - 1].longitude, gps[i - 1].latitude),
-                            Point.fromLngLat(gps[i].longitude, gps[i].latitude),
+                mapView.getMapAsync { map ->
+                    // Buckets are built off the main thread beforehand; only layer registration here.
+                    map.setStyle("https://demotiles.maplibre.org/style.json") { style ->
+                        val bucketMap = routeBuckets
+                        if (bucketMap.isNullOrEmpty() || gps.size < 2) return@setStyle
+                        val colors = mapOf(
+                            "reliable" to COLOR_RELIABLE,
+                            "assisted" to COLOR_ASSISTED,
+                            "poor" to COLOR_POOR,
                         )
-                        val acc = gps[i - 1].horizontalAccuracyMeters
-                        val prefs = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this@RunDetailActivity)
-                        val key = when {
-                            acc <= prefs.mapReliableMeters -> "reliable"
-                            acc <= prefs.mapAssistedMeters -> "assisted"
-                            else -> "poor"
-                        }
-                        buckets.getValue(key).add(
-                            Feature.fromGeometry(LineString.fromLngLats(pts))
-                        )
-                    }
-                    val colors = mapOf(
-                        "reliable" to COLOR_RELIABLE,
-                        "assisted" to COLOR_ASSISTED,
-                        "poor" to COLOR_POOR,
-                    )
-                    for ((key, features) in buckets) {
-                        if (features.isEmpty()) continue
-                        val sourceId = "route-$key"
-                        style.addSource(GeoJsonSource(sourceId, FeatureCollection.fromFeatures(features)))
-                        style.addLayer(
-                            LineLayer("route-layer-$key", sourceId).withProperties(
-                                lineColor(Color.parseColor(colors.getValue(key))),
-                                lineWidth(4f)
+                        for ((key, features) in bucketMap) {
+                            if (features.isEmpty()) continue
+                            val sourceId = "route-$key"
+                            style.addSource(GeoJsonSource(sourceId, FeatureCollection.fromFeatures(features)))
+                            style.addLayer(
+                                LineLayer("route-layer-$key", sourceId).withProperties(
+                                    lineColor(Color.parseColor(colors.getValue(key))),
+                                    lineWidth(4f)
+                                )
                             )
+                        }
+                        val lats = gps.map { it.latitude }
+                        val lngs = gps.map { it.longitude }
+                        val bounds = LatLngBounds.from(
+                            lats.max(), lngs.max(),
+                            lats.min(), lngs.min()
                         )
+                        map.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds, 100))
                     }
-                    val lats = gps.map { it.latitude }
-                    val lngs = gps.map { it.longitude }
-                    val bounds = LatLngBounds.from(
-                        lats.max(), lngs.max(),
-                        lats.min(), lngs.min()
-                    )
-                    map.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds, 100))
                 }
-            }
         }
     }
 

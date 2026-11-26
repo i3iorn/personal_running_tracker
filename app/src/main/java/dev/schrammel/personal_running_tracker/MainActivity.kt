@@ -246,8 +246,20 @@ class MainActivity : ComponentActivity() {
     private fun importGpxFrom(uri: android.net.Uri) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                    ?: throw IllegalStateException("Cannot read file")
+                val maxMb = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this@MainActivity).importMaxMb
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                    val sb = StringBuilder()
+                    val buf = CharArray(8192)
+                    while (true) {
+                        val n = reader.read(buf)
+                        if (n < 0) break
+                        sb.append(buf, 0, n)
+                        if (sb.length > maxMb * 1_000_000) {
+                            throw IllegalArgumentException("GPX file too large (limit $maxMb MB)")
+                        }
+                    }
+                    sb.toString()
+                } ?: throw IllegalStateException("Cannot read file")
                 val result = GpxImporter().importGpx(text)
                 val db = AppDatabase.getInstance(applicationContext as Application)
                 db.runDao().insertRun(result.run.toEntity())

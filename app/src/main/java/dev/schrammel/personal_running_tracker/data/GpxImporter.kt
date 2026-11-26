@@ -13,14 +13,26 @@ import java.time.format.DateTimeFormatter
 
 class GpxImporter {
 
+    companion object {
+        /** Refuse absurd GPX inputs before parsing (DoS guard). */
+        const val MAX_XML_CHARS = 10_000_000
+    }
+
     data class ImportResult(
         val run: RunRecord,
         val gpsObservations: List<GpsObservation>,
     )
 
-    fun importGpx(xmlContent: String): ImportResult {
+    fun importGpx(xmlContent: String, maxPoints: Int = 100_000, maxXmlChars: Long = MAX_XML_CHARS.toLong()): ImportResult {
+        if (xmlContent.length > maxXmlChars) {
+            throw IllegalArgumentException("GPX file too large (limit ${maxXmlChars / 1_000_000} MB)")
+        }
         val factory = DocumentBuilderFactory.newInstance()
-        factory.setNamespaceAware(true)
+        // Hardened against XXE / external entity attacks on untrusted input
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        factory.isNamespaceAware = true
+        factory.isXIncludeAware = false
+        factory.isExpandEntityReferences = false
         val builder = factory.newDocumentBuilder()
         val doc = builder.parse(InputSource(StringReader(xmlContent)))
 

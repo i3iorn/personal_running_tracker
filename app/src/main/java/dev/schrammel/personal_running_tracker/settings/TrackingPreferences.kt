@@ -78,79 +78,93 @@ class TrackingPreferences(context: Context) {
         get() = prefs.getBoolean("battery_benchmark_enabled", false)
         set(value) { prefs.edit().putBoolean("battery_benchmark_enabled", value).apply() }
 
-    // ----- Everything that used to be a hardcoded value in code -----
-    // GPS scheduling for the fixed profiles (was: 60 s/100 m and 5 s/10 m)
+    // ----- New settings from the security/performance pass -----
+    // GPX import size cap in MB (DoS guard)
+    var importMaxMb: Int
+        get() = prefs.getInt("import_max_mb", 10).coerceIn(1, 100)
+        set(value) { prefs.edit().putInt("import_max_mb", value).apply() }
+
+    // Statistics charts: rolling window length and trend weeks
+    var rollingWindowDays: Int
+        get() = prefs.getInt("rolling_window_days", 30).coerceIn(1, 365)
+        set(value) { prefs.edit().putInt("rolling_window_days", value).apply() }
+
+    var chartWeeks: Int
+        get() = prefs.getInt("chart_weeks", 8).coerceIn(1, 52)
+        set(value) { prefs.edit().putInt("chart_weeks", value).apply() }
+
+    // ----- Validated getters: every expert setting is clamped at this single
+    // choke point so a bad value in Settings cannot break the engine. -----
     var saverGpsMinIntervalMs: Long
-        get() = prefs.getLong("saver_gps_min_interval_ms", 60_000L)
+        get() = prefs.getLong("saver_gps_min_interval_ms", 60_000L).coerceIn(1_000L, 600_000L)
         set(value) { prefs.edit().putLong("saver_gps_min_interval_ms", value).apply() }
 
     var saverGpsMinDistanceMeters: Float
-        get() = prefs.getFloat("saver_gps_min_distance_meters", 100f)
+        get() = prefs.getFloat("saver_gps_min_distance_meters", 100f).coerceIn(1f, 10_000f)
         set(value) { prefs.edit().putFloat("saver_gps_min_distance_meters", value).apply() }
 
     var highAccuracyGpsMinIntervalMs: Long
-        get() = prefs.getLong("high_accuracy_gps_min_interval_ms", 5_000L)
+        get() = prefs.getLong("high_accuracy_gps_min_interval_ms", 5_000L).coerceIn(1_000L, 600_000L)
         set(value) { prefs.edit().putLong("high_accuracy_gps_min_interval_ms", value).apply() }
 
     var highAccuracyGpsMinDistanceMeters: Float
-        get() = prefs.getFloat("high_accuracy_gps_min_distance_meters", 10f)
+        get() = prefs.getFloat("high_accuracy_gps_min_distance_meters", 10f).coerceIn(1f, 10_000f)
         set(value) { prefs.edit().putFloat("high_accuracy_gps_min_distance_meters", value).apply() }
 
-    // Live pace display (was: 10 s window, 0.3 m/s stationary gate, 20 m accuracy gate)
     var paceSmoothingWindowMs: Long
-        get() = prefs.getLong("pace_smoothing_window_ms", 10_000L)
+        get() = prefs.getLong("pace_smoothing_window_ms", 10_000L).coerceIn(1_000L, 120_000L)
         set(value) { prefs.edit().putLong("pace_smoothing_window_ms", value).apply() }
 
     var paceMinSpeedMps: Float
-        get() = prefs.getFloat("pace_min_speed_mps", 0.3f)
+        get() = prefs.getFloat("pace_min_speed_mps", 0.3f).coerceIn(0f, 10f)
         set(value) { prefs.edit().putFloat("pace_min_speed_mps", value).apply() }
 
     var paceMaxAccuracyMeters: Float
-        get() = prefs.getFloat("pace_max_accuracy_meters", 20f)
+        get() = prefs.getFloat("pace_max_accuracy_meters", 20f).coerceIn(1f, 1_000f)
         set(value) { prefs.edit().putFloat("pace_max_accuracy_meters", value).apply() }
 
-    // Splits (was: 1000 m)
     var splitLengthMeters: Double
-        get() = prefs.getFloat("split_length_meters", 1000f).toDouble()
+        get() = prefs.getFloat("split_length_meters", 1000f).coerceIn(100f, 10_000f).toDouble()
         set(value) { prefs.edit().putFloat("split_length_meters", value.toFloat()).apply() }
 
-    // Diagnostics / notifications (was: 25 m degraded, 5/10/20/50 rating bands)
     var degradedGpsThresholdMeters: Float
-        get() = prefs.getFloat("degraded_gps_threshold_meters", 25f)
+        get() = prefs.getFloat("degraded_gps_threshold_meters", 25f).coerceIn(1f, 500f)
         set(value) { prefs.edit().putFloat("degraded_gps_threshold_meters", value).apply() }
 
     var ratingExcellentMeters: Float
-        get() = prefs.getFloat("rating_excellent_meters", 5f)
+        get() = prefs.getFloat("rating_excellent_meters", 5f).coerceIn(1f, 500f)
         set(value) { prefs.edit().putFloat("rating_excellent_meters", value).apply() }
 
     var ratingGoodMeters: Float
-        get() = prefs.getFloat("rating_good_meters", 10f)
+        get() = prefs.getFloat("rating_good_meters", 10f).coerceIn(1f, 500f)
         set(value) { prefs.edit().putFloat("rating_good_meters", value).apply() }
 
     var ratingFairMeters: Float
-        get() = prefs.getFloat("rating_fair_meters", 20f)
+        get() = prefs.getFloat("rating_fair_meters", 20f).coerceIn(1f, 500f)
         set(value) { prefs.edit().putFloat("rating_fair_meters", value).apply() }
 
     var ratingPoorMeters: Float
-        get() = prefs.getFloat("rating_poor_meters", 50f)
+        get() = prefs.getFloat("rating_poor_meters", 50f).coerceIn(1f, 500f)
         set(value) { prefs.edit().putFloat("rating_poor_meters", value).apply() }
 
-    // Crash-recovery state persistence cadence (was: 5 s)
     var statePersistIntervalMs: Long
-        get() = prefs.getLong("state_persist_interval_ms", 5_000L)
+        get() = prefs.getLong("state_persist_interval_ms", 5_000L).coerceIn(1_000L, 600_000L)
         set(value) { prefs.edit().putLong("state_persist_interval_ms", value).apply() }
 
-    // Personal-record distances in km, comma separated (was: 1,3,5,10)
     var prDistanceKmList: String
-        get() = prefs.getString("pr_distance_km_list", "1,3,5,10") ?: "1,3,5,10"
+        get() {
+            val raw = prefs.getString("pr_distance_km_list", "1,3,5,10") ?: "1,3,5,10"
+            val valid = raw.split(",").mapNotNull { it.trim().toDoubleOrNull() }
+                .filter { it > 0 && it <= 500 }.joinToString(",")
+            return valid.ifEmpty { "1,3,5,10" }
+        }
         set(value) { prefs.edit().putString("pr_distance_km_list", value).apply() }
 
-    // Route-map reliability colouring (was: 10 m / 25 m)
     var mapReliableMeters: Float
-        get() = prefs.getFloat("map_reliable_meters", 10f)
+        get() = prefs.getFloat("map_reliable_meters", 10f).coerceIn(1f, 500f)
         set(value) { prefs.edit().putFloat("map_reliable_meters", value).apply() }
 
     var mapAssistedMeters: Float
-        get() = prefs.getFloat("map_assisted_meters", 25f)
+        get() = prefs.getFloat("map_assisted_meters", 25f).coerceIn(1f, 500f)
         set(value) { prefs.edit().putFloat("map_assisted_meters", value).apply() }
 }

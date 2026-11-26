@@ -59,38 +59,52 @@ class StatisticsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val db = AppDatabase.getInstance(applicationContext as Application)
             val now = System.currentTimeMillis()
-            val allRuns = withContext(Dispatchers.IO) { db.runDao().observeAllRuns().first().map { it.toRecord() } }
+            // All aggregation happens off the main thread; only UI assignment below.
+            val computed = withContext(Dispatchers.IO) {
+                val allRuns = db.runDao().observeAllRuns().first().map { it.toRecord() }
+                val filtered = StatisticsEngine.filterRuns(allRuns, selectedRange, now)
+                val totals = StatisticsEngine.totals(filtered, now)
 
-            val filtered = StatisticsEngine.filterRuns(allRuns, selectedRange, now)
-            val totals = StatisticsEngine.totals(filtered, now)
-            overview.text = formatTotals(totals)
+                val previous = previousWindowTotals(allRuns, selectedRange, now)
+                val comparison = previous?.let { StatisticsEngine.compare(totals, it) }
 
-            val previous = previousWindowTotals(allRuns, selectedRange, now)
-            comparisonText.text = if (previous == null) "" else {
-                val c = StatisticsEngine.compare(totals, previous)
-                formatComparison(c)
+                val rolling = StatisticsEngine.rollingDistance(allRuns, prefs().rollingWindowDays, now)
+                val trends = StatisticsEngine.weeklyTrends(allRuns, prefs().chartWeeks, now)
+                val distribution = StatisticsEngine.distanceDistribution(allRuns)
+
+                ComputedStats(allRuns, totals, comparison,
+                    rolling.reversed().map { it.second.toFloat() },
+                    trends, distribution)
             }
 
-            // Rolling 30-day distance chart (independent of the selected range)
-            val rolling = StatisticsEngine.rollingDistance(allRuns, 30, now)
-            findViewById<dev.schrammel.personal_running_tracker.view.BarChartView>(R.id.rollingChart)
-                .setValues(rolling.reversed().map { it.second.toFloat() })
+            overview.text = formatTotals(computed.totals)
+            comparisonText.text = computed.comparison?.let { formatComparison(it) } ?: ""
 
-            // Weekly trends (gap fix: distance + pace trend charts) and run-length histogram
-            val trends = StatisticsEngine.weeklyTrends(allRuns, 8, now)
+            val charts = findViewById<dev.schrammel.personal_running_tracker.view.BarChartView>(R.id.rollingChart)
+            charts.setValues(computed.rolling)
             findViewById<dev.schrammel.personal_running_tracker.view.BarChartView>(R.id.weeklyDistanceChart)
-                .setValues(trends.map { it.second.toFloat() })
-            val paceBars = trends.map { it.third }.filter { it > 0 }
+                .setValues(computed.trends.map { it.second.toFloat() })
+            val paceBars = computed.trends.map { it.third }.filter { it > 0 }
             val maxPace = paceBars.maxOrNull() ?: 1.0
             findViewById<dev.schrammel.personal_running_tracker.view.BarChartView>(R.id.weeklyPaceChart)
-                .setValues(trends.map { if (it.third > 0) (maxPace - it.third + maxPace * 0.1).toFloat() else 0f })
+                .setValues(computed.trends.map { if (it.third > 0) (maxPace - it.third + maxPace * 0.1).toFloat() else 0f })
             findViewById<TextView>(R.id.distributionText).text =
-                StatisticsEngine.distanceDistribution(allRuns)
-                    .joinToString("\n") { "%-10s %d".format(it.first, it.second) }
+                computed.distribution.joinToString("\n") { "%-10s %d".format(it.first, it.second) }
 
             prText.text = withContext(Dispatchers.IO) { computePersonalRecords(db) }
         }
     }
+
+    private class ComputedStats(
+        val allRuns: List<dev.schrammel.personal_running_tracker.model.RunRecord>,
+        val totals: Totals,
+        val comparison: Comparison?,
+        val rolling: List<Float>,
+        val trends: List<Triple<Long, Double, Double>>,
+        val distribution: List<Pair<String, Int>>,
+    )
+
+    private fun prefs() = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this)
 
     /** Previous equal-length calendar window for comparison (spec §8.5). */
     private fun previousWindowTotals(
