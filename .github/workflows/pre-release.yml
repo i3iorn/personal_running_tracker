@@ -70,7 +70,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="${{ steps.version.outputs.version }}-${{ steps.commit.outputs.sha }}"
+          TAG="v${{ steps.version.outputs.version }}-${{ steps.commit.outputs.sha }}"
           echo "TAG=$TAG" >> $GITHUB_ENV
           git tag -f "$TAG"
           git push -f origin "$TAG"
