@@ -10,16 +10,16 @@ plugins {
 }
 
 dependencyCheck {
-    // Scan only dependency configurations, not this project's own artifacts
+    // Scan only what the APK actually ships (runtime classpaths). Scanning
+    // build-time configurations produced endless filename-heuristic false
+    // positives on AGP-embedded Kotlin tooling that never ships.
+    scanConfigurations = listOf("debugRuntimeClasspath", "releaseRuntimeClasspath")
     analyzers {
         assemblyEnabled = false
     }
     failBuildOnCVSS = 9.0f
-    // NVD's API intermittently returns HTTP 524 during the (huge) initial
-    // database sync, especially without an API key. Don't fail the whole task
-    // on update errors; the analysis runs on cached/partial data and the next
-    // run completes the sync. Retry weekly — the DB caches locally.
     failOnError = false
+    suppressionFile = rootProject.file("owasp-suppressions.xml").absolutePath
     // Free key from https://nvd.nist.gov/developers/request-an-api-key
     // Set via environment; never hardcode it.
     nvd {
@@ -27,8 +27,18 @@ dependencyCheck {
     }
 }
 
+
+// kotlin-stdlib-jdk7/jdk8 are empty compatibility stubs since Kotlin 1.8
+// (their content merged into kotlin-stdlib). Exclude the legacy empty jars —
+// they trip CVE version-range heuristics without shipping any code.
+configurations.all {
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+}
+
 android {
     namespace = "dev.schrammel.personal_running_tracker"
+
     compileSdk = 37
 
     defaultConfig {
