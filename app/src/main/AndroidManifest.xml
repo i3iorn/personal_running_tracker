@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Only for map tile rendering in the run-detail view; recording stays fully offline. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:name=".RunningTrackerApp"
@@ -24,6 +26,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity android:name=".RunDetailActivity" android:exported="false" />
 
         <!-- Foreground service declared here; implemented in Phase 2. -->
         <service android:name=".tracking.TrackingService" android:exported="false"

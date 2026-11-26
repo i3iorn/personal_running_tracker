@@ -44,6 +44,22 @@ class MainActivity : ComponentActivity() {
             val svc = trackingService
             if (svc != null && svc.isRunningFlag()) {
                 binding.elapsedText.text = formatElapsed(svc.currentElapsedMs())
+                val km = svc.currentDistanceMeters() / 1000.0
+                binding.distanceText.text = String.format("%.2f km", km)
+                val accuracy = svc.currentAccuracyMeters()
+                val speed = svc.currentSmoothedSpeedMps()
+                // Confidence gate: hide instantaneous pace when GPS quality is poor
+                if (speed != null && accuracy != null && accuracy <= 20f) {
+                    val paceSecPerKm = 1000.0 / speed
+                    binding.paceText.text = String.format("%d:%02d /km",
+                        (paceSecPerKm / 60).toInt(), (paceSecPerKm % 60).toInt())
+                    binding.speedText.text = String.format("%.1f km/h", speed * 3.6)
+                } else {
+                    binding.paceText.text = "--:-- /km"
+                    binding.speedText.text = String.format("%.1f km/h",
+                        (speed ?: 0.0) * 3.6)
+                }
+                binding.accuracyText.text = if (accuracy != null) "± %.0f m".format(accuracy) else "± -- m"
             }
             uiHandler.postDelayed(this, 1000L)
         }
@@ -104,7 +120,10 @@ class MainActivity : ComponentActivity() {
         binding.exportButton.setOnClickListener { exportData() }
         binding.runHistoryList.setOnItemClickListener { _, _, position, _ ->
             val run = repository.allRuns.value.getOrNull(position) ?: return@setOnItemClickListener
-            binding.statusText.text = "Run ${run.id}: ${run.distanceMeters.toInt()} m"
+            startActivity(
+                android.content.Intent(this, RunDetailActivity::class.java)
+                    .putExtra(RunDetailActivity.EXTRA_RUN_ID, run.id)
+            )
         }
 
         bindService(

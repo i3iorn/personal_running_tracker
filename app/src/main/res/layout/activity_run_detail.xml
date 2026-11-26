@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true"
+    android:background="@color/rt_background">
+
+    <TextView
+        android:id="@+id/detailTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp"
+        android:text="Run detail"
+        android:textColor="@color/rt_primary"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/detailStats"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:text=""
+        android:textColor="@color/rt_on_surface_variant"
+        android:textSize="14sp" />
+
+    <org.maplibre.android.maps.MapView
+        android:id="@+id/mapView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/splitsText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="12dp"
+        android:maxLines="8"
+        android:scrollbars="vertical"
+        android:text=""
+        android:textColor="@color/rt_on_surface"
+        android:textSize="13sp" />
+</LinearLayout>

@@ -64,6 +64,7 @@ dependencies {
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
     ksp("androidx.room:room-compiler:2.8.5")
+    implementation("org.maplibre.gl:android-sdk:13.8.0")
     testImplementation("androidx.test.ext:junit:1.1.5")
     testImplementation("org.robolectric:robolectric:4.18")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

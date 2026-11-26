@@ -13,6 +13,9 @@ import dev.schrammel.personal_running_tracker.data.AppDatabase
 import dev.schrammel.personal_running_tracker.data.GpsEntity
 import dev.schrammel.personal_running_tracker.data.RunEntity
 import dev.schrammel.personal_running_tracker.data.RunDiagnostic
+import dev.schrammel.personal_running_tracker.data.SplitEntity
+import dev.schrammel.personal_running_tracker.domain.split.GpsPoint
+import dev.schrammel.personal_running_tracker.domain.split.SplitCalculator
 import dev.schrammel.personal_running_tracker.settings.TrackingPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,11 +61,24 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private var gpsFixCount: Int = 0
     private var sensorFixCount: Int = 0
     private var maxAccuracyMetersSeen: Float = 0f
+    private var lastAccuracyMeters: Float? = null
+    private val recentSpeeds = ArrayDeque<Pair<Long, Float>>() // (timeMs, speedMps)
     @Volatile private var lastFinishedRunId: Long = 0L
 
     // Public API for MainActivity to query live state
     fun isRunningFlag(): Boolean = isRunning
     fun currentElapsedMs(): Long = accumElapsedMs + (if (isPaused) 0L else System.currentTimeMillis() - segmentStartMs)
+    fun currentDistanceMeters(): Double = currentDistanceMeters
+    fun currentAccuracyMeters(): Float? = lastAccuracyMeters
+
+    /** Smoothed current speed (m/s): mean GPS speed over the last 10 s; null when stationary. */
+    fun currentSmoothedSpeedMps(): Double? {
+        val cutoff = System.currentTimeMillis() - 10_000L
+        recentSpeeds.removeAll { it.first < cutoff }
+        if (recentSpeeds.isEmpty()) return null
+        val mean = recentSpeeds.map { it.second }.average()
+        return if (mean >= 0.3) mean else null
+    }
 
     inner class LocalBinder : android.os.Binder() {
         fun getService(): TrackingService = this@TrackingService
@@ -219,6 +235,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
         }
         val accuracy = location.accuracy.coerceAtLeast(0f)
         if (accuracy > maxAccuracyMetersSeen) maxAccuracyMetersSeen = accuracy
+        lastAccuracyMeters = accuracy
+        recentSpeeds.addLast(timeMs to location.speed.coerceAtLeast(0f))
         lastLat = lat
         lastLng = lng
 
@@ -308,6 +326,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
                     )
                 )
                 recordDiagnostics(runId, elapsedMs, distance)
+                computeAndStoreSplits(runId)
             }
         }
         lastFinishedRunId = runId
@@ -323,6 +342,26 @@ class TrackingService : Service(), SensorAdapter.Callback {
         lastFinishedRunId.takeIf { it > 0L }?.let {
             database.runDiagnosticDao().getDiagnosticByRunId(it)
         }
+
+    private suspend fun computeAndStoreSplits(runId: Long) {
+        val points = database.gpsDao().getGpsForRun(runId).map {
+            GpsPoint(it.latitude, it.longitude, it.altitudeMeters, it.timestamp)
+        }
+        val splits = SplitCalculator.computeSplits(points)
+        if (splits.isNotEmpty()) {
+            database.splitDao().insertSplits(splits.map {
+                SplitEntity(
+                    runId = runId,
+                    splitNumber = it.splitNumber,
+                    distanceMeters = it.distanceMeters,
+                    durationSeconds = it.durationMs / 1000L,
+                    averagePaceSecondsPerMeter = it.averagePaceSecondsPerMeter,
+                    averageSpeedMetersPerSecond = it.averageSpeedMetersPerSecond,
+                    elevationChangeMeters = it.elevationChangeMeters,
+                )
+            })
+        }
+    }
 
     private suspend fun recordDiagnostics(runId: Long, durationMs: Long, fusedDistanceMeters: Double) {
         val batteryStart = batteryStartPct
