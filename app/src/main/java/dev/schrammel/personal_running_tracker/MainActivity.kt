@@ -22,8 +22,14 @@ import androidx.core.content.ContextCompat
 import android.app.Application
 import androidx.lifecycle.lifecycleScope
 import dev.schrammel.personal_running_tracker.data.AppDatabase
+import dev.schrammel.personal_running_tracker.data.BackupManager
 import dev.schrammel.personal_running_tracker.data.CsvExporter
+import dev.schrammel.personal_running_tracker.data.GpxExporter
+import dev.schrammel.personal_running_tracker.data.GpxImporter
 import dev.schrammel.personal_running_tracker.data.RunRepository
+import dev.schrammel.personal_running_tracker.data.toEntity
+import dev.schrammel.personal_running_tracker.data.toObservation
+import kotlinx.coroutines.flow.first
 import dev.schrammel.personal_running_tracker.databinding.ActivityMainBinding
 import dev.schrammel.personal_running_tracker.settings.TrackingPreferences
 import dev.schrammel.personal_running_tracker.tracking.TrackingService
@@ -121,6 +127,9 @@ class MainActivity : ComponentActivity() {
             startActivity(android.content.Intent(this, StatisticsActivity::class.java))
         }
         binding.exportButton.setOnClickListener { exportData() }
+        binding.importButton.setOnClickListener { importGpx() }
+        binding.backupButton.setOnClickListener { backupData() }
+        binding.restoreButton.setOnClickListener { restoreData() }
         binding.runHistoryList.setOnItemClickListener { _, _, position, _ ->
             val run = repository.allRuns.value.getOrNull(position) ?: return@setOnItemClickListener
             startActivity(
@@ -159,12 +168,107 @@ class MainActivity : ComponentActivity() {
                 diagnosticsCsv.writeText(exporter.exportDiagnostics(diagnostics))
                 val tuningCsv = java.io.File(exportDir, "tracking_tuning.csv")
                 tuningCsv.writeText(exporter.exportTuning(TrackingPreferences(this@MainActivity)))
+                val db = AppDatabase.getInstance(applicationContext as Application)
+                val allRuns = db.runDao().observeAllRuns().first()
+                val splitsCsv = java.io.File(exportDir, "run_splits.csv")
+                splitsCsv.writeText(
+                    exporter.exportSplits(allRuns.flatMap { db.splitDao().getSplitsForRun(it.id) })
+                )
+                val gpx = GpxExporter()
+                allRuns.forEach { run ->
+                    val gps = db.gpsDao().getGpsForRun(run.id)
+                    if (gps.size >= 2) {
+                        java.io.File(exportDir, "run-${run.id}.gpx").writeText(gpx.toGpx(run.id, gps.map { it.toObservation() }))
+                    }
+                }
                 kotlinx.coroutines.withContext(Dispatchers.Main) {
                     binding.statusText.text = "Exported to ${exportDir.absolutePath}"
                 }
             } catch (e: Exception) {
                 kotlinx.coroutines.withContext(Dispatchers.Main) {
                     binding.statusText.text = "Export failed: ${e.message}"
+                }
+            }
+        }
+    }
+
+    private fun backupData() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val file = BackupManager(this@MainActivity).createBackup()
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    binding.statusText.text = "Backup: ${file.absolutePath}"
+                }
+            } catch (e: Exception) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    binding.statusText.text = "Backup failed: ${e.message}"
+                }
+            }
+        }
+    }
+
+    private fun restoreData() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val latest = BackupManager(this@MainActivity).listBackups().firstOrNull()
+                if (latest == null) {
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        binding.statusText.text = "No backup found"
+                    }
+                    return@launch
+                }
+                val ok = BackupManager(this@MainActivity).restoreBackup(latest)
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    binding.statusText.text = if (ok) {
+                        "Restored ${latest.name} — restart the app to see the data"
+                    } else "Restore failed"
+                }
+            } catch (e: Exception) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    binding.statusText.text = "Restore failed: ${e.message}"
+                }
+            }
+        }
+    }
+
+    private val gpxImportPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) importGpxFrom(uri)
+    }
+
+    private fun importGpx() {
+        gpxImportPicker.launch(arrayOf("*/*"))
+    }
+
+    private fun importGpxFrom(uri: android.net.Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: throw IllegalStateException("Cannot read file")
+                val result = GpxImporter().importGpx(text)
+                val db = AppDatabase.getInstance(applicationContext as Application)
+                db.runDao().insertRun(result.run.toEntity())
+                result.gpsObservations.forEach { obs ->
+                    db.gpsDao().insertGps(
+                        dev.schrammel.personal_running_tracker.data.GpsEntity(
+                            runId = obs.runId, timestamp = obs.timestamp,
+                            latitude = obs.latitude, longitude = obs.longitude,
+                            altitudeMeters = obs.altitudeMeters,
+                            horizontalAccuracyMeters = obs.horizontalAccuracyMeters,
+                            verticalAccuracyMeters = obs.verticalAccuracyMeters,
+                            speedMetersPerSecond = obs.speedMetersPerSecond,
+                            bearingDegrees = obs.bearingDegrees,
+                            provider = obs.provider, measurementQuality = obs.measurementQuality,
+                        )
+                    )
+                }
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    binding.statusText.text = "Imported: %.2f km from GPX".format(result.run.distanceMeters / 1000.0)
+                }
+            } catch (e: Exception) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    binding.statusText.text = "Import failed: ${e.message}"
                 }
             }
         }

@@ -11,8 +11,8 @@ import java.util.zip.ZipInputStream
 
 class BackupManager(private val context: Context) {
 
-    private val dbFile: File = File(context.filesDir.parentFile, "databases/${context.packageName}.db")
-    private val backupDir: File = File(context.filesDir.parentFile, "backups")
+    private val dbFile: File = context.getDatabasePath("personal_running_tracker.db")
+    private val backupDir: File = File(context.getExternalFilesDir(null), "export/backups")
 
     init {
         if (!backupDir.exists()) {
@@ -26,11 +26,24 @@ class BackupManager(private val context: Context) {
 
         val zipOut = ZipOutputStream(FileOutputStream(backupFile))
         try {
-            zipOut.putNextEntry(ZipEntry("database.db"))
-            val dbIn = FileInputStream(dbFile)
-            dbIn.copyTo(zipOut)
-            dbIn.close()
-            zipOut.closeEntry()
+            // Room keeps -wal/-shm sidecars; back them up too or recent writes may be lost.
+            for (suffix in listOf("", "-wal", "-shm")) {
+                val f = File(dbFile.parentFile, dbFile.name + suffix)
+                if (f.exists()) {
+                    zipOut.putNextEntry(ZipEntry("database.db" + suffix))
+                    val dbIn = FileInputStream(f)
+                    dbIn.copyTo(zipOut)
+                    dbIn.close()
+                    zipOut.closeEntry()
+                }
+            }
+            // Shared preferences (settings + tuning knobs)
+            val prefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
+            prefsDir.listFiles()?.forEach { prefs ->
+                zipOut.putNextEntry(ZipEntry("prefs/${prefs.name}"))
+                FileInputStream(prefs).use { it.copyTo(zipOut) }
+                zipOut.closeEntry()
+            }
 
             zipOut.putNextEntry(ZipEntry("manifest.json"))
             val manifest = createManifest()
@@ -47,13 +60,22 @@ class BackupManager(private val context: Context) {
         if (!backupFile.exists()) return false
 
         try {
+            // Close the Room singleton so the files can be replaced safely.
+            AppDatabase.closeInstance()
             val zipIn = ZipInputStream(FileInputStream(backupFile))
             var entry = zipIn.nextEntry
             while (entry != null) {
-                if (entry.name == "database.db") {
-                    val dbOut = FileOutputStream(dbFile)
+                if (entry.name.startsWith("database.db")) {
+                    val target = File(dbFile.parentFile, entry.name)
+                    val dbOut = FileOutputStream(target)
                     zipIn.copyTo(dbOut)
                     dbOut.close()
+                } else if (entry.name.startsWith("prefs/")) {
+                    val prefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
+                    prefsDir.mkdirs()
+                    val out = FileOutputStream(File(prefsDir, entry.name.removePrefix("prefs/")))
+                    zipIn.copyTo(out)
+                    out.close()
                 }
                 entry = zipIn.nextEntry
             }

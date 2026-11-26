@@ -56,6 +56,8 @@ class RunDetailActivity : AppCompatActivity() {
             finish()
             return
         }
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.editRunButton)
+            .setOnClickListener { showEditDialog(db, runId) }
 
         lifecycleScope.launch {
             val run = withContext(Dispatchers.IO) { db.runDao().getRunById(runId) }
@@ -129,6 +131,47 @@ class RunDetailActivity : AppCompatActivity() {
                     map.moveCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds, 100))
                 }
             }
+        }
+    }
+
+    private fun showEditDialog(db: AppDatabase, runId: Long) {
+        lifecycleScope.launch {
+            val run = withContext(Dispatchers.IO) { db.runDao().getRunById(runId) } ?: return@launch
+            val container = android.widget.LinearLayout(this@RunDetailActivity).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(48, 24, 48, 0)
+            }
+            val distanceInput = android.widget.EditText(this@RunDetailActivity).apply {
+                hint = "Distance (km)"
+                setText("%.2f".format(run.distanceMeters / 1000.0))
+            }
+            val notesInput = android.widget.EditText(this@RunDetailActivity).apply {
+                hint = "Notes"
+                setText(run.notes)
+            }
+            container.addView(distanceInput)
+            container.addView(notesInput)
+            androidx.appcompat.app.AlertDialog.Builder(this@RunDetailActivity)
+                .setTitle("Edit run")
+                .setView(container)
+                .setPositiveButton("Save") { _, _ ->
+                    val km = distanceInput.text.toString().toDoubleOrNull() ?: return@setPositiveButton
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val newDistance = km * 1000.0
+                        // Manual corrections must not overwrite original measurements (spec §7.2)
+                        val updated = run.copy(
+                            distanceMeters = newDistance,
+                            averagePaceSecondsPerMeter = if (newDistance > 0) run.elapsedDurationSeconds.toDouble() / newDistance else 0.0,
+                            averageSpeedMetersPerSecond = if (run.elapsedDurationSeconds > 0) newDistance / run.elapsedDurationSeconds else 0.0,
+                            userAdjusted = true,
+                            notes = notesInput.text.toString(),
+                            modifiedAt = System.currentTimeMillis(),
+                        )
+                        db.runDao().updateRun(updated)
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
     }
 

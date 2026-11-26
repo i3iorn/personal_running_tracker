@@ -27,6 +27,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Closes and clears the singleton so the underlying files can be replaced (backup restore). */
+        fun closeInstance() {
+            synchronized(this) {
+                INSTANCE?.close()
+                INSTANCE = null
+            }
+        }
+
         private fun buildDatabase(context: Application): AppDatabase {
             return Room.databaseBuilder(
                 context,

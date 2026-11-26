@@ -46,3 +46,23 @@ fun RunEntity.toRecord(): RunRecord = RunRecord(
     createdAt = createdAt,
     modifiedAt = modifiedAt,
 )
+
+fun RunRecord.toEntity(): RunEntity = RunEntity(
+    id = id, startTimestamp = startTimestamp, endTimestamp = endTimestamp,
+    elapsedDurationSeconds = elapsedDurationSeconds,
+    movingDurationSeconds = movingDurationSeconds,
+    pausedDurationSeconds = pausedDurationSeconds,
+    distanceMeters = distanceMeters,
+    originalDistanceMeters = originalDistanceMeters,
+    averagePaceSecondsPerMeter = averagePaceSecondsPerMeter,
+    averageSpeedMetersPerSecond = averageSpeedMetersPerSecond,
+    elevationGainMeters = elevationGainMeters,
+    elevationLossMeters = elevationLossMeters,
+    stepCount = stepCount,
+    trackingProfile = trackingProfile,
+    trackingAlgorithmVersion = trackingAlgorithmVersion,
+    userAdjusted = userAdjusted,
+    notes = notes,
+    createdAt = createdAt,
+    modifiedAt = modifiedAt,
+)

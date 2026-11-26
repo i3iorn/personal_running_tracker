@@ -108,6 +108,22 @@ class CsvExporter {
         return (listOf(header) + rows).joinToString("\n")
     }
 
+    fun exportSplits(splits: List<SplitEntity>): String {
+        val header = listOf(
+            "run_id", "split_number", "distance_meters", "duration_seconds",
+            "average_pace_seconds_per_meter", "average_speed_meters_per_second",
+            "elevation_change_meters",
+        ).joinToString(",")
+        val rows = splits.joinToString("\n") { s ->
+            listOf(
+                s.runId.toString(), s.splitNumber.toString(), s.distanceMeters.toString(),
+                s.durationSeconds.toString(), s.averagePaceSecondsPerMeter.toString(),
+                s.averageSpeedMetersPerSecond.toString(), s.elevationChangeMeters.toString(),
+            ).joinToString(",")
+        }
+        return (listOf(header) + rows).joinToString("\n")
+    }
+
     private fun formatDistance(value: Double): String = value.toString()
 
     private fun formatPace(value: Double): String = value.toString()
