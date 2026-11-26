@@ -7,22 +7,20 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.IBinder
-import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import dev.schrammel.personal_running_tracker.R
 import dev.schrammel.personal_running_tracker.data.AppDatabase
 import dev.schrammel.personal_running_tracker.data.GpsEntity
 import dev.schrammel.personal_running_tracker.data.RunEntity
-import dev.schrammel.personal_running_tracker.domain.Calculator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
-class TrackingService : Service() {
+class TrackingService : Service(), SensorAdapter.Callback {
 
     companion object {
         const val SERVICE_NAME = "TrackingService"
@@ -38,6 +36,7 @@ class TrackingService : Service() {
     private lateinit var locationManager: LocationManager
     private lateinit var database: AppDatabase
     private var locationListener: LocationListener? = null
+    private var sensorAdapter: SensorAdapter? = null
     private val notificationId = 1001
 
     private var isRunning = false
@@ -51,6 +50,7 @@ class TrackingService : Service() {
     private var lastLng: Double? = null
     private var currentDistanceMeters: Double = 0.0
     private var trackingProfile: String = "Balanced"
+    private var stepCount: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -89,12 +89,16 @@ class TrackingService : Service() {
             accumElapsedMs = 0L
             accumMovingMs = 0L
             segmentStartMs = System.currentTimeMillis()
+            currentDistanceMeters = 0.0
+            lastLat = null
+            lastLng = null
         } else if (isPaused) {
             isPaused = false
             segmentStartMs = System.currentTimeMillis()
         }
         startForegroundIfNeeded()
         startLocationUpdates(trackingProfile)
+        startSensorUpdates()
     }
 
     private fun startForegroundIfNeeded() {
@@ -141,6 +145,16 @@ class TrackingService : Service() {
         locationListener = null
     }
 
+    private fun startSensorUpdates() {
+        if (sensorAdapter != null) return
+        sensorAdapter = SensorAdapter(this, this).also { it.start() }
+    }
+
+    private fun stopSensorUpdates() {
+        sensorAdapter?.stop()
+        sensorAdapter = null
+    }
+
     private fun CriteriaProvider(): android.location.Criteria = android.location.Criteria().apply {
         isBearingRequired = false
         isSpeedRequired = false
@@ -148,13 +162,24 @@ class TrackingService : Service() {
         accuracy = android.location.Criteria.ACCURACY_HIGH
     }
 
+    override fun onStepCount(totalSteps: Long) {
+        stepCount = totalSteps
+    }
+
+    override fun onAccelerometerMagnitude(magnitude: Double) {}
+
+    override fun onGyroscope(x: Float, y: Float, z: Float) {}
+
+    override fun onHeading(azimuthDegrees: Float) {}
+
     private fun onLocationChanged(location: Location) {
         val lat = location.latitude
         val lng = location.longitude
         val timeMs = System.currentTimeMillis()
-        if (lastLat != null && lastLng != null) {
-            val delta = haversineMeters(lastLat!!, lastLng!!, lat, lng)
-            currentDistanceMeters += delta
+        val prevLat = lastLat
+        val prevLng = lastLng
+        if (prevLat != null && prevLng != null) {
+            currentDistanceMeters += haversineMeters(prevLat, prevLng, lat, lng)
         }
         lastLat = lat
         lastLng = lng
@@ -196,6 +221,7 @@ class TrackingService : Service() {
         accumMovingMs += now - segmentStartMs
         isPaused = true
         stopLocationUpdates()
+        stopSensorUpdates()
     }
 
     private fun resumeRun() {
@@ -203,6 +229,7 @@ class TrackingService : Service() {
         isPaused = false
         segmentStartMs = System.currentTimeMillis()
         startLocationUpdates(trackingProfile)
+        startSensorUpdates()
     }
 
     private fun finishRun() {
@@ -214,6 +241,7 @@ class TrackingService : Service() {
         isRunning = false
         isPaused = false
         stopLocationUpdates()
+        stopSensorUpdates()
         val distance = currentDistanceMeters
         if (runId > 0L) {
             serviceScope.launch {
@@ -231,7 +259,7 @@ class TrackingService : Service() {
                         averageSpeedMetersPerSecond = if (distance > 0.0) distance / (elapsedMs.toDouble() / 1000.0) else 0.0,
                         elevationGainMeters = 0.0,
                         elevationLossMeters = 0.0,
-                        stepCount = 0L,
+                        stepCount = stepCount,
                         trackingProfile = trackingProfile,
                         trackingAlgorithmVersion = "1.0.0",
                         userAdjusted = false,
@@ -250,6 +278,7 @@ class TrackingService : Service() {
         isRunning = false
         isPaused = false
         stopLocationUpdates()
+        stopSensorUpdates()
         stopForeground(0)
         stopSelf()
     }
@@ -258,5 +287,6 @@ class TrackingService : Service() {
         super.onDestroy()
         serviceScope.cancel()
         stopLocationUpdates()
+        stopSensorUpdates()
     }
 }

@@ -32,6 +32,12 @@ class RunRepository(
 
     suspend fun getGpsForRun(runId: Long) = db.gpsDao().getGpsForRun(runId).map { it.toObservation() }
 
+    suspend fun getSensorsForRun(runId: Long) = db.sensorDao().getSensorsForRun(runId)
+
+    suspend fun getEstimatedPositionsForRun(runId: Long) = db.estimatedPositionDao().getEstimatedPositionsForRun(runId)
+
     private val runDao get() = db.runDao()
     private val gpsDao get() = db.gpsDao()
+    private val sensorDao get() = db.sensorDao()
+    private val estimatedPositionDao get() = db.estimatedPositionDao()
 }
