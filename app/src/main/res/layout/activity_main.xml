@@ -1,109 +1,242 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:background="@color/rt_background">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="12dp">
+
+        <TextView
+            android:id="@+id/titleText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Personal Running Tracker"
+            android:textColor="@color/rt_primary"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Ready"
+            android:textColor="@color/rt_on_surface_variant"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        app:cardBackgroundColor="@color/rt_surface"
+        app:cardCornerRadius="20dp"
+        app:cardElevation="2dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:id="@+id/elapsedText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="00:00"
+                android:textColor="@color/rt_on_surface"
+                android:textSize="52sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="DISTANCE"
+                        android:textColor="@color/rt_on_surface_variant"
+                        android:textSize="11sp"
+                        android:letterSpacing="0.1" />
+
+                    <TextView
+                        android:id="@+id/distanceText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="0.0 km"
+                        android:textColor="@color/rt_on_surface"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="PACE"
+                        android:textColor="@color/rt_on_surface_variant"
+                        android:textSize="11sp"
+                        android:letterSpacing="0.1" />
+
+                    <TextView
+                        android:id="@+id/paceText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="--:-- /km"
+                        android:textColor="@color/rt_on_surface"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="SPEED"
+                        android:textColor="@color/rt_on_surface_variant"
+                        android:textSize="11sp"
+                        android:letterSpacing="0.1" />
+
+                    <TextView
+                        android:id="@+id/speedText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="0.0 km/h"
+                        android:textColor="@color/rt_on_surface"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/accuracyText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center"
+                android:text="± -- m"
+                android:textColor="@color/rt_on_surface_variant"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:layout_marginTop="12dp">
+
+        <TextView
+            android:id="@+id/profileText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Tracking Profile: Balanced"
+            android:textColor="@color/rt_on_surface_variant"
+            android:textSize="14sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/profileButton"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Change" />
+    </LinearLayout>
 
     <TextView
-        android:id="@+id/titleText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Personal Running Tracker"
-        android:textSize="24sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/statusText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Ready" />
-
-    <TextView
-        android:id="@+id/elapsedText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="—"
-        android:textSize="18sp"
-        android:textStyle="italic" />
-
-    <TextView
-        android:id="@+id/distanceText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="—"
-        android:textSize="18sp" />
-
-    <TextView
-        android:id="@+id/paceText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="—"
-        android:textSize="18sp" />
-
-    <TextView
-        android:id="@+id/speedText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="—"
-        android:textSize="18sp" />
-
-    <TextView
-        android:id="@+id/accuracyText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="—"
-        android:textSize="18sp" />
-
-    <TextView
-        android:id="@+id/profileText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="Tracking Profile: Balanced"
-        android:textSize="14sp" />
-
-    <Button
-        android:id="@+id/profileButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="Change Tracking Profile" />
+        android:layout_marginStart="20dp"
+        android:layout_marginTop="18dp"
+        android:text="RECENT RUNS"
+        android:textColor="@color/rt_on_surface_variant"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.1" />
 
     <ListView
         android:id="@+id/runHistoryList"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="8dp" />
+        android:layout_marginTop="4dp"
+        android:divider="@null"
+        android:dividerHeight="0dp"
+        android:clipToPadding="false"
+        android:paddingBottom="8dp" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="12dp">
+        android:padding="16dp"
+        android:background="@color/rt_surface"
+        android:elevation="8dp">
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/startButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Start Run" />
+            android:layout_weight="1.4"
+            android:text="Start Run"
+            app:backgroundTint="@color/rt_accent_green" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/pauseButton"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:layout_marginStart="8dp"
             android:text="Pause" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/finishButton"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:layout_marginStart="8dp"
             android:text="Finish" />
     </LinearLayout>
 

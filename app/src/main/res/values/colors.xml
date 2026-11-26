@@ -4,4 +4,17 @@
     <color name="white">#FFFFFF</color>
     <color name="black_alpha_87">#33000000</color>
     <color name="white_alpha_87">#DDFFFFFF</color>
+
+    <!-- Running Tracker palette -->
+    <color name="rt_primary">#00695C</color>
+    <color name="rt_primary_dark">#004D40</color>
+    <color name="rt_secondary">#FF6F00</color>
+    <color name="rt_background">#F4F6F8</color>
+    <color name="rt_surface">#FFFFFF</color>
+    <color name="rt_on_surface">#1A1C1E</color>
+    <color name="rt_on_surface_variant">#5A5F63</color>
+    <color name="rt_accent_green">#2E7D32</color>
+    <color name="rt_accent_red">#C62828</color>
+    <color name="ic_launcher_background">#00695C</color>
+    <color name="colorBackground">#F4F6F8</color>
 </resources>

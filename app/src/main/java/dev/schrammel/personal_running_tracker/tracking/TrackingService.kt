@@ -159,7 +159,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         isBearingRequired = false
         isSpeedRequired = false
         isAltitudeRequired = false
-        accuracy = android.location.Criteria.ACCURACY_HIGH
+        // accuracy = android.location.Criteria.ACCURACY_HIGH  // Removed: ACCURACY_HIGH is out of range [0, 2] in Android 35
     }
 
     override fun onStepCount(totalSteps: Long) {

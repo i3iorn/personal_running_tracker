@@ -1,8 +1,13 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.PersonalRunningTracker" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/purple_500</item>
-        <item name="colorPrimaryVariant">@color/purple_700</item>
+        <item name="colorPrimary">@color/rt_primary</item>
+        <item name="colorPrimaryVariant">@color/rt_primary_dark</item>
         <item name="colorOnPrimary">@color/white</item>
-        <item name="colorOnBackground">@color/black_alpha_87</item>
+        <item name="colorOnSecondary">@color/white</item>
+        <item name="colorOnBackground">@color/rt_on_surface</item>
+        <item name="colorSurface">@color/rt_surface</item>
+        <item name="colorOnSurface">@color/rt_on_surface</item>
+        <item name="android:statusBarColor">@color/rt_primary_dark</item>
+        <item name="android:windowBackground">@color/rt_background</item>
     </style>
 </resources>
