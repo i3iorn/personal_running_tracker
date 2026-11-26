@@ -53,20 +53,34 @@ jobs:
           echo "Debug APK: $APK"
           ls -lh "$APK"
 
+      - name: Extract app version from build.gradle.kts
+        id: version
+        run: |
+          # Parse versionName from build.gradle.kts (e.g. versionName = "0.1.0")
+          VERSION=$(grep 'versionName' app/build.gradle.kts | sed -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/' | tr -d '[:space:]')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Get short commit SHA
+        id: commit
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Create pre-release tag
         if: github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f latest-pre
-          git push -f origin latest-pre
+          TAG="${{ steps.version.outputs.version }}-${{ steps.commit.outputs.sha }}"
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          git tag -f "$TAG"
+          git push -f origin "$TAG"
 
       - name: Create GitHub Pre-Release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest-pre
-          name: Pre-Release ${{ github.run_number }}
+          tag_name: ${{ env.TAG }}
+          name: Pre-Release ${{ env.TAG }}
           files: app/build/outputs/apk/debug/app-debug.apk
           generate_release_notes: true
           draft: false
