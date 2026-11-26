@@ -167,22 +167,29 @@ class StatisticsActivity : AppCompatActivity() {
     }
 
     private fun formatTotals(t: Totals): String {
+        val prefs = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this)
+        val units = dev.schrammel.personal_running_tracker.domain.units.Units
         fun hms(s: Long) = "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
+        fun dist(m: Double) = "%.2f %s".format(units.distance(m, prefs.distanceUnit), units.distanceLabel(prefs.distanceUnit))
         return buildString {
             append("Runs:            %d\n".format(t.runCount))
-            append("Distance:        %.2f km\n".format(t.totalDistanceMeters / 1000.0))
+            append("Distance:        %s\n".format(dist(t.totalDistanceMeters)))
             append("Time:            %s\n".format(hms(t.totalElapsedSeconds)))
             append("Moving:          %s\n".format(hms(t.totalMovingSeconds)))
-            append("Avg distance:    %.2f km\n".format(t.averageDistanceMeters / 1000.0))
-            append("Avg pace:        %d:%02d /km\n".format(
-                (t.averagePaceSecondsPerKm / 60).toInt(), (t.averagePaceSecondsPerKm % 60).toInt()))
-            append("Avg speed:       %.1f km/h\n".format(t.averageSpeedMetersPerSecond * 3.6))
-            append("Longest run:     %.2f km\n".format(t.longestRunMeters / 1000.0))
+            append("Avg distance:    %s\n".format(dist(t.averageDistanceMeters)))
+            append("Avg pace:        %s %s\n".format(
+                units.paceText(t.averagePaceSecondsPerKm / 1000.0, prefs.paceUnit),
+                units.paceLabel(prefs.paceUnit)))
+            append("Avg speed:       %.1f %s\n".format(
+                units.speed(t.averageSpeedMetersPerSecond, prefs.distanceUnit),
+                units.speedLabel(prefs.distanceUnit)))
+            append("Longest run:     %s\n".format(dist(t.longestRunMeters)))
             t.fastestRunPaceSecondsPerKm?.let {
-                append("Fastest run:     %d:%02d /km\n".format((it / 60).toInt(), (it % 60).toInt()))
+                append("Fastest run:     %s %s\n".format(
+                    units.paceText(it / 1000.0, prefs.paceUnit), units.paceLabel(prefs.paceUnit)))
             }
-            append("Avg weekly:      %.2f km\n".format(t.averageWeeklyDistanceMeters / 1000.0))
-            append("Avg monthly:     %.2f km".format(t.averageMonthlyDistanceMeters / 1000.0))
+            append("Avg weekly:      %s\n".format(dist(t.averageWeeklyDistanceMeters)))
+            append("Avg monthly:     %s".format(dist(t.averageMonthlyDistanceMeters)))
         }
     }
 

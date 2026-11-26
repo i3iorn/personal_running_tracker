@@ -89,21 +89,34 @@ class RunDetailActivity : AppCompatActivity() {
             }
 
             run?.let {
+                val prefs = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this@RunDetailActivity)
+                val units = dev.schrammel.personal_running_tracker.domain.units.Units
+                val name = run.notes.lineSequence().firstOrNull { it.isNotBlank() }?.take(30) ?: "Run ${run.id}"
+                findViewById<TextView>(R.id.detailTitle).text = name
                 statsText.text = String.format(
-                    "%.2f km  •  %d:%02d  •  %.1f km/h",
-                    it.distanceMeters / 1000.0,
+                    "%.2f %s  •  %d:%02d  •  %.1f %s",
+                    units.distance(run.distanceMeters, prefs.distanceUnit),
+                    units.distanceLabel(prefs.distanceUnit),
                     it.elapsedDurationSeconds / 60,
                     it.elapsedDurationSeconds % 60,
-                    it.averageSpeedMetersPerSecond * 3.6,
+                    units.speed(it.averageSpeedMetersPerSecond, prefs.distanceUnit),
+                    units.speedLabel(prefs.distanceUnit),
                 )
             }
-            splitsText.text = if (splits.isEmpty()) "No splits recorded" else splits.joinToString("\n") { s ->
-                "Split %d: %.2f km in %d:%02d (%.1f km/h, %+d m)".format(
-                    s.splitNumber, s.distanceMeters / 1000.0,
-                    s.durationSeconds / 60, s.durationSeconds % 60,
-                    s.averageSpeedMetersPerSecond * 3.6,
-                    s.elevationChangeMeters.toInt(),
-                )
+            splitsText.text = if (splits.isEmpty()) "No splits recorded" else {
+                val prefs = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this@RunDetailActivity)
+                val units = dev.schrammel.personal_running_tracker.domain.units.Units
+                splits.joinToString("\n") { s ->
+                    "Split %d: %.2f %s in %d:%02d (%.1f %s, %+d m)".format(
+                        s.splitNumber,
+                        units.distance(s.distanceMeters, prefs.distanceUnit),
+                        units.distanceLabel(prefs.distanceUnit),
+                        s.durationSeconds / 60, s.durationSeconds % 60,
+                        units.speed(s.averageSpeedMetersPerSecond, prefs.distanceUnit),
+                        units.speedLabel(prefs.distanceUnit),
+                        s.elevationChangeMeters.toInt(),
+                    )
+                }
             }
 
                 mapView.getMapAsync { map ->

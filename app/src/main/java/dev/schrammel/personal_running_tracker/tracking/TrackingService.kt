@@ -18,6 +18,8 @@ import dev.schrammel.personal_running_tracker.data.RunStateEntity
 import dev.schrammel.personal_running_tracker.data.SplitEntity
 import dev.schrammel.personal_running_tracker.domain.split.GpsPoint
 import dev.schrammel.personal_running_tracker.domain.split.SplitCalculator
+import dev.schrammel.personal_running_tracker.domain.sensor.GpsAnchor
+import dev.schrammel.personal_running_tracker.domain.sensor.SensorFusion
 import dev.schrammel.personal_running_tracker.settings.TrackingPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +70,9 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private var lastFixTimeMs: Long = 0L
     private var lastFixGapMs: Long = 0L
     private var movingSegmentMs: Long = 0L
+    private var fusion: SensorFusion? = null
+    private var baseDistanceMeters: Double = 0.0
+    private var rawGpsDistanceMeters: Double = 0.0
     private val recentSpeeds = ArrayDeque<Pair<Long, Float>>() // (timeMs, speedMps)
     @Volatile private var lastFinishedRunId: Long = 0L
 
@@ -127,6 +132,13 @@ class TrackingService : Service(), SensorAdapter.Callback {
         trackingProfile = state.trackingProfile
         batteryStartPct = state.batteryStartPct
         movingSegmentMs = prefs.runStateMovingSegmentMs
+        // Rebuild fusion from the restored distance; anchors resume reconciliation
+        // from here without double counting (pending sensor distance starts at 0).
+        fusion = SensorFusion(
+            maxGpsSegmentRatio = prefs.tuningSensorFusionMaxGpsSegmentRatio,
+            uncertaintyPerStepMeters = 5.0,
+        )
+        baseDistanceMeters = state.distanceMeters
     }
 
     private suspend fun persistState() {
@@ -179,6 +191,13 @@ class TrackingService : Service(), SensorAdapter.Callback {
             lastLat = null
             lastLng = null
             runId = System.currentTimeMillis()
+            // Fresh fusion instance per run: GPS anchors reconcile with sensor estimates
+            fusion = SensorFusion(
+                maxGpsSegmentRatio = prefs.tuningSensorFusionMaxGpsSegmentRatio,
+                uncertaintyPerStepMeters = 5.0,
+            )
+            baseDistanceMeters = 0.0
+            rawGpsDistanceMeters = 0.0
             // Battery reads are binder calls; keep them off the UI/caller thread.
             serviceScope.launch { batteryStartPct = getBatteryLevel() }
             gpsFixCount = 0
@@ -284,6 +303,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
     override fun onStepCount(totalSteps: Long) {
         stepCount = totalSteps
         sensorFixCount++
+        // Sensor-assisted distance: pending estimate until the next GPS anchor verifies it
+        fusion?.onSensorStep(prefs.tuningStrideLengthMeters)
     }
 
     override fun onAccelerometerMagnitude(magnitude: Double) {}
@@ -302,7 +323,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         lastFixTimeMs = timeMs
         lastFixGapMs = gapMs
         if (prevLat != null && prevLng != null) {
-            currentDistanceMeters += haversineMeters(prevLat, prevLng, lat, lng)
+            rawGpsDistanceMeters += haversineMeters(prevLat, prevLng, lat, lng)
         }
         val accuracy = location.accuracy.coerceAtLeast(0f)
         if (accuracy > maxAccuracyMetersSeen) maxAccuracyMetersSeen = accuracy
@@ -315,6 +336,22 @@ class TrackingService : Service(), SensorAdapter.Callback {
         } else reported
         val effectiveSpeed = if (reported > 0.5f) reported else segmentSpeed.coerceAtLeast(0f)
         recentSpeeds.addLast(timeMs to effectiveSpeed)
+
+        // Sensor fusion: reconcile this anchor with the pending sensor estimate.
+        // Never double counts: the pending sensor distance is replaced by the
+        // verified GPS segment (or kept when GPS looks glitchy).
+        val f = fusion
+        if (f != null) {
+            val update = f.onGpsAnchor(
+                GpsAnchor(
+                    latitude = lat, longitude = lng,
+                    altitudeMeters = location.altitude, timestampMs = timeMs,
+                    accuracyMeters = accuracy, speedMps = effectiveSpeed,
+                    bearingDegrees = location.bearing,
+                )
+            )
+            currentDistanceMeters = baseDistanceMeters + update.totalDistanceMeters
+        }
 
         // Auto-pause: stationary periods do not accumulate moving time (spec §10)
         val stationaryThresholdMps = 0.2 + prefs.autoPauseSensitivity * 0.03
@@ -469,7 +506,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val batteryDurationMs = durationMs
         val gpsCount = gpsFixCount
         val sensorCount = sensorFixCount
-        val fusedVsGpsDelta = fusedDistanceMeters
+        val fusedVsGpsDelta = rawGpsDistanceMeters - fusedDistanceMeters
         val maxAccuracy = if (gpsFixCount > 0) maxAccuracyMetersSeen else 0f
         val accuracyRating = when {
             gpsFixCount == 0 -> null

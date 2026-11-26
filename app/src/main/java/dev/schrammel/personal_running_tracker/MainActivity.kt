@@ -50,23 +50,25 @@ class MainActivity : ComponentActivity() {
             val svc = trackingService
             if (svc != null && svc.isRunningFlag()) {
                 val prefs = TrackingPreferences(this@MainActivity)
+                val units = dev.schrammel.personal_running_tracker.domain.units.Units
                 // Screen-on preference only applies while a run is active
                 binding.root.keepScreenOn = prefs.screenOnEnabled
                 binding.elapsedText.text = formatElapsed(svc.currentElapsedMs())
-                val km = svc.currentDistanceMeters() / 1000.0
-                binding.distanceText.text = String.format("%.2f km", km)
+                binding.distanceText.text = String.format(
+                    "%.2f %s", units.distance(svc.currentDistanceMeters(), prefs.distanceUnit),
+                    units.distanceLabel(prefs.distanceUnit))
                 val accuracy = svc.currentAccuracyMeters()
                 val speed = svc.currentSmoothedSpeedMps()
                 // Confidence gate: hide instantaneous pace when GPS quality is poor
                 if (speed != null && accuracy != null && accuracy <= prefs.paceMaxAccuracyMeters) {
-                    val paceSecPerKm = 1000.0 / speed
-                    binding.paceText.text = String.format("%d:%02d /km",
-                        (paceSecPerKm / 60).toInt(), (paceSecPerKm % 60).toInt())
-                    binding.speedText.text = String.format("%.1f km/h", speed * 3.6)
+                    val secPerMeter = 1.0 / speed
+                    binding.paceText.text = units.paceText(secPerMeter, prefs.paceUnit) + units.paceLabel(prefs.paceUnit)
+                    binding.speedText.text = String.format("%.1f %s",
+                        units.speed(speed, prefs.distanceUnit), units.speedLabel(prefs.distanceUnit))
                 } else {
-                    binding.paceText.text = "--:-- /km"
-                    binding.speedText.text = String.format("%.1f km/h",
-                        (speed ?: 0.0) * 3.6)
+                    binding.paceText.text = "--:--" + units.paceLabel(prefs.paceUnit)
+                    binding.speedText.text = String.format("%.1f %s",
+                        units.speed(speed ?: 0.0, prefs.distanceUnit), units.speedLabel(prefs.distanceUnit))
                 }
                 binding.accuracyText.text = if (accuracy != null) "± %.0f m".format(accuracy) else "± -- m"
             }
@@ -293,10 +295,11 @@ class MainActivity : ComponentActivity() {
     private var filterDays: Int? = null
     private var displayedRuns: List<dev.schrammel.personal_running_tracker.model.RunRecord> = emptyList()
     private var allRunsCache: List<dev.schrammel.personal_running_tracker.model.RunRecord> = emptyList()
-    private lateinit var historyAdapter: ArrayAdapter<String>
+    private lateinit var historyAdapter: HistoryAdapter
+    private val thumbnailsLoading = mutableSetOf<Long>()
 
     private fun setupHistoryList() {
-        historyAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf())
+        historyAdapter = HistoryAdapter(this)
         binding.runHistoryList.adapter = historyAdapter
         lifecycleScope.launch {
             repository.allRuns.collect { runs ->
@@ -311,21 +314,48 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyHistoryFilter() {
+        val prefs = TrackingPreferences(this)
+        val units = dev.schrammel.personal_running_tracker.domain.units.Units
         displayedRuns = allRunsCache.filter { run ->
             filterDays == null ||
                 run.startTimestamp >= System.currentTimeMillis() - filterDays!! * 86_400_000L
         }
         val fmt = java.text.SimpleDateFormat("MMM d HH:mm", java.util.Locale.US)
-        historyAdapter.clear()
-        historyAdapter.addAll(displayedRuns.map { run ->
-            "%s  •  %.2f km  •  %d:%02d:%02d".format(
-                fmt.format(java.util.Date(run.startTimestamp)),
-                run.distanceMeters / 1000.0,
-                run.elapsedDurationSeconds / 3600,
-                (run.elapsedDurationSeconds % 3600) / 60,
-                run.elapsedDurationSeconds % 60,
+        historyAdapter.setRows(displayedRuns.map { run ->
+            val name = run.notes.lineSequence().firstOrNull { it.isNotBlank() }?.take(30)
+                ?: "Run ${run.id}"
+            HistoryAdapter.Row(
+                runId = run.id,
+                title = name,
+                subtitle = "%s  •  %.2f %s  •  %d:%02d:%02d".format(
+                    fmt.format(java.util.Date(run.startTimestamp)),
+                    units.distance(run.distanceMeters, prefs.distanceUnit),
+                    units.distanceLabel(prefs.distanceUnit),
+                    run.elapsedDurationSeconds / 3600,
+                    (run.elapsedDurationSeconds % 3600) / 60,
+                    run.elapsedDurationSeconds % 60,
+                ),
             )
         })
+        // Render route thumbnails lazily, off the main thread
+        val db = AppDatabase.getInstance(applicationContext as Application)
+        for (run in displayedRuns) {
+            if (historyAdapter.hasThumbnail(run.id) || !thumbnailsLoading.add(run.id)) continue
+            lifecycleScope.launch(Dispatchers.IO) {
+                val points = db.gpsDao().getGpsForRun(run.id)
+                val bitmap = if (points.size >= 2) {
+                    // Sample to at most 200 points for the tiny canvas
+                    val step = maxOf(1, points.size / 200)
+                    HistoryAdapter.renderThumbnail(points.filterIndexed { i, _ -> i % step == 0 })
+                } else null
+                if (bitmap != null) {
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        historyAdapter.setThumbnail(run.id, bitmap)
+                    }
+                }
+                thumbnailsLoading.remove(run.id)
+            }
+        }
     }
 
     private fun showFilterDialog() {
@@ -382,6 +412,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun finishRun() {
+        val svc = trackingService
+        if (svc?.isRunningFlag() == true) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Finish run?")
+                .setMessage("The current run will be saved.")
+                .setPositiveButton("Finish") { _, _ -> actuallyFinishRun() }
+                .setNegativeButton("Keep running", null)
+                .show()
+        } else {
+            actuallyFinishRun()
+        }
+    }
+
+    private fun actuallyFinishRun() {
         startService(Intent(this, TrackingService::class.java).apply {
             action = TrackingService.ACTION_FINISH_RUN
         })
@@ -402,6 +446,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun discardRun() {
+        val svc = trackingService
+        if (svc?.isRunningFlag() == true) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Discard run?")
+                .setMessage("All data from the current run will be lost. This cannot be undone.")
+                .setPositiveButton("Discard") { _, _ -> actuallyDiscardRun() }
+                .setNegativeButton("Keep running", null)
+                .show()
+        } else {
+            actuallyDiscardRun()
+        }
+    }
+
+    private fun actuallyDiscardRun() {
         startService(Intent(this, TrackingService::class.java).apply {
             action = TrackingService.ACTION_DISCARD_RUN
         })
@@ -417,10 +475,13 @@ class MainActivity : ComponentActivity() {
         run: dev.schrammel.personal_running_tracker.data.RunEntity,
         diag: dev.schrammel.personal_running_tracker.data.RunDiagnostic?,
     ) {
-        val km = run.distanceMeters / 1000.0
-        val paceMinPerKm = if (km > 0) run.averagePaceSecondsPerMeter * 1000.0 / 60.0 else 0.0
+        val prefs = TrackingPreferences(this)
+        val units = dev.schrammel.personal_running_tracker.domain.units.Units
+        val name = run.notes.lineSequence().firstOrNull { it.isNotBlank() }?.take(40) ?: "Run Summary"
         val text = buildString {
-            append("Distance: %.2f km\n".format(km))
+            append("Distance: %.2f %s\n".format(
+                units.distance(run.distanceMeters, prefs.distanceUnit),
+                units.distanceLabel(prefs.distanceUnit)))
             append("Duration: %d:%02d:%02d\n".format(
                 run.elapsedDurationSeconds / 3600,
                 (run.elapsedDurationSeconds % 3600) / 60,
@@ -433,8 +494,12 @@ class MainActivity : ComponentActivity() {
                 run.pausedDurationSeconds / 3600,
                 (run.pausedDurationSeconds % 3600) / 60,
                 run.pausedDurationSeconds % 60))
-            append("Avg pace: %d:%02d /km\n".format(paceMinPerKm.toInt(), ((paceMinPerKm % 1) * 60).toInt()))
-            append("Avg speed: %.1f km/h\n".format(run.averageSpeedMetersPerSecond * 3.6))
+            append("Avg pace: %s %s\n".format(
+                units.paceText(run.averagePaceSecondsPerMeter, prefs.paceUnit),
+                units.paceLabel(prefs.paceUnit)))
+            append("Avg speed: %.1f %s\n".format(
+                units.speed(run.averageSpeedMetersPerSecond, prefs.distanceUnit),
+                units.speedLabel(prefs.distanceUnit)))
             append("Steps: %d\n".format(run.stepCount))
             if (diag != null) {
                 append("\nBattery: %s%% used (start %s%%, end %s%%)\n".format(
@@ -442,13 +507,14 @@ class MainActivity : ComponentActivity() {
                     diag.batteryStartPercent?.toString() ?: "?",
                     diag.batteryEndPercent?.toString() ?: "?"))
                 append("GPS fixes: %d, sensor samples: %d\n".format(diag.gpsFixCount, diag.sensorFixCount))
+                append("Raw GPS vs fused distance: %+.1f m\n".format(diag.fusedVsGpsDeltaMeters))
                 append("Max GPS error: %.0f m (rating %s/5)".format(
                     diag.maxAccuracyMeters ?: 0f,
                     diag.accuracyRating?.toString() ?: "?"))
             }
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Run Summary")
+            .setTitle(name)
             .setMessage(text)
             .setPositiveButton("Save", null)
             .show()
