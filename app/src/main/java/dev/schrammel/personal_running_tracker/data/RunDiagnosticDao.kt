@@ -15,4 +15,7 @@ interface RunDiagnosticDao {
 
     @Query("SELECT * FROM run_diagnostics ORDER BY runId DESC")
     fun observeAllDiagnostics(): Flow<List<RunDiagnostic>>
+
+    @Query("SELECT * FROM run_diagnostics ORDER BY runId DESC")
+    suspend fun getAllDiagnostics(): List<RunDiagnostic>
 }

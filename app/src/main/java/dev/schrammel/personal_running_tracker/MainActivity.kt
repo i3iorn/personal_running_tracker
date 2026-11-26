@@ -1,9 +1,16 @@
 package dev.schrammel.personal_running_tracker
 
 import android.Manifest
+import android.app.ActivityManager
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -13,7 +20,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import android.app.Application
+import androidx.lifecycle.lifecycleScope
 import dev.schrammel.personal_running_tracker.data.AppDatabase
+import dev.schrammel.personal_running_tracker.data.CsvExporter
 import dev.schrammel.personal_running_tracker.data.RunRepository
 import dev.schrammel.personal_running_tracker.databinding.ActivityMainBinding
 import dev.schrammel.personal_running_tracker.settings.TrackingPreferences
@@ -26,6 +35,39 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var repository: RunRepository
+
+    private var trackingService: TrackingService? = null
+    private var bound = false
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val uiTicker = object : Runnable {
+        override fun run() {
+            val svc = trackingService
+            if (svc != null && svc.isRunningFlag()) {
+                binding.elapsedText.text = formatElapsed(svc.currentElapsedMs())
+            }
+            uiHandler.postDelayed(this, 1000L)
+        }
+    }
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val binder = service as? TrackingService.LocalBinder ?: return
+            trackingService = binder.getService()
+            bound = true
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            trackingService = null
+            bound = false
+        }
+    }
+
+    private fun formatElapsed(ms: Long): String {
+        val totalSeconds = ms / 1000
+        val mins = totalSeconds / 60
+        val secs = totalSeconds % 60
+        return String.format("%02d:%02d", mins, secs)
+    }
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -58,9 +100,50 @@ class MainActivity : ComponentActivity() {
         binding.pauseButton.setOnClickListener { pauseRun() }
         binding.finishButton.setOnClickListener { finishRun() }
         binding.profileButton.setOnClickListener { cycleTrackingProfile() }
+        binding.exportButton.setOnClickListener { exportData() }
         binding.runHistoryList.setOnItemClickListener { _, _, position, _ ->
             val run = repository.allRuns.value.getOrNull(position) ?: return@setOnItemClickListener
             binding.statusText.text = "Run ${run.id}: ${run.distanceMeters.toInt()} m"
+        }
+
+        bindService(
+            Intent(this, TrackingService::class.java),
+            serviceConnection,
+            Context.BIND_AUTO_CREATE
+        )
+        uiHandler.post(uiTicker)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        uiHandler.removeCallbacks(uiTicker)
+        if (bound) {
+            unbindService(serviceConnection)
+            bound = false
+        }
+    }
+
+    private fun exportData() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val exporter = CsvExporter()
+                val exportDir = java.io.File(getExternalFilesDir(null), "export").apply { mkdirs() }
+                val runsCsv = java.io.File(exportDir, "runs.csv")
+                runsCsv.writeText(exporter.exportRuns(repository.allRuns.value))
+                val diagnostics = AppDatabase.getInstance(applicationContext as Application)
+                    .runDiagnosticDao().getAllDiagnostics()
+                val diagnosticsCsv = java.io.File(exportDir, "run_diagnostics.csv")
+                diagnosticsCsv.writeText(exporter.exportDiagnostics(diagnostics))
+                val tuningCsv = java.io.File(exportDir, "tracking_tuning.csv")
+                tuningCsv.writeText(exporter.exportTuning(TrackingPreferences(this@MainActivity)))
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    binding.statusText.text = "Exported to ${exportDir.absolutePath}"
+                }
+            } catch (e: Exception) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    binding.statusText.text = "Export failed: ${e.message}"
+                }
+            }
         }
     }
 

@@ -58,6 +58,16 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private var gpsFixCount: Int = 0
     private var sensorFixCount: Int = 0
 
+    // Public API for MainActivity to query live state
+    fun isRunningFlag(): Boolean = isRunning
+    fun currentElapsedMs(): Long = accumElapsedMs + (if (isPaused) 0L else System.currentTimeMillis() - segmentStartMs)
+
+    inner class LocalBinder : android.os.Binder() {
+        fun getService(): TrackingService = this@TrackingService
+    }
+
+    override fun onBind(intent: Intent?): IBinder = LocalBinder()
+
     override fun onCreate() {
         super.onCreate()
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -87,7 +97,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
         }
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    // (onBind is overridden above to expose LocalBinder)
+
 
     private fun startRun() {
         if (!isRunning) {
