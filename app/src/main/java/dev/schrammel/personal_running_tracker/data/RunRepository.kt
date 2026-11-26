@@ -26,6 +26,10 @@ class RunRepository(
         scope.launch { db.runDao().insertRun(entity) }
     }
 
+    suspend fun updateRun(entity: RunEntity) {
+        scope.launch { db.runDao().updateRun(entity) }
+    }
+
     suspend fun getRun(id: Long): RunRecord? = runDao.getRunById(id)?.toRecord()
 
     suspend fun deleteRun(id: Long) = db.runDao().deleteRun(id)
