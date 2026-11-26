@@ -7,12 +7,13 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 @TypeConverters(Converters::class)
-@Database(entities = [RunEntity::class, GpsEntity::class, SensorEntity::class, EstimatedPositionEntity::class], version = 1, exportSchema = false)
+@Database(entities = [RunEntity::class, GpsEntity::class, SensorEntity::class, EstimatedPositionEntity::class, RunDiagnostic::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun runDao(): RunDao
     abstract fun gpsDao(): GpsDao
     abstract fun sensorDao(): SensorDao
     abstract fun estimatedPositionDao(): EstimatedPositionDao
+    abstract fun runDiagnosticDao(): RunDiagnosticDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null

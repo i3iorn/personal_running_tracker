@@ -12,6 +12,8 @@ import androidx.core.app.ServiceCompat
 import dev.schrammel.personal_running_tracker.data.AppDatabase
 import dev.schrammel.personal_running_tracker.data.GpsEntity
 import dev.schrammel.personal_running_tracker.data.RunEntity
+import dev.schrammel.personal_running_tracker.data.RunDiagnostic
+import dev.schrammel.personal_running_tracker.settings.TrackingPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,6 +37,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
 
     private lateinit var locationManager: LocationManager
     private lateinit var database: AppDatabase
+    private lateinit var prefs: TrackingPreferences
     private var locationListener: LocationListener? = null
     private var sensorAdapter: SensorAdapter? = null
     private val notificationId = 1001
@@ -51,11 +54,15 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private var currentDistanceMeters: Double = 0.0
     private var trackingProfile: String = "Balanced"
     private var stepCount: Long = 0L
+    private var batteryStartPct: Int? = null
+    private var gpsFixCount: Int = 0
+    private var sensorFixCount: Int = 0
 
     override fun onCreate() {
         super.onCreate()
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         database = AppDatabase.getInstance(getApplication() as Application)
+        prefs = TrackingPreferences(this)
         createNotificationChannel()
     }
 
@@ -92,6 +99,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
             currentDistanceMeters = 0.0
             lastLat = null
             lastLng = null
+            runId = System.currentTimeMillis()
+            batteryStartPct = getBatteryLevel()
         } else if (isPaused) {
             isPaused = false
             segmentStartMs = System.currentTimeMillis()
@@ -99,6 +108,12 @@ class TrackingService : Service(), SensorAdapter.Callback {
         startForegroundIfNeeded()
         startLocationUpdates(trackingProfile)
         startSensorUpdates()
+    }
+
+    private fun getBatteryLevel(): Int? {
+        // Production: read via BatteryManager or PowerProfile.
+        // Returns null if unavailable; feature gracefully degrades.
+        return null
     }
 
     private fun startForegroundIfNeeded() {
@@ -131,10 +146,14 @@ class TrackingService : Service(), SensorAdapter.Callback {
         )
     }
 
-    private fun locationRequestParams(profile: String): Pair<Long, Float> = when (profile) {
-        "Saver" -> Pair(TimeUnit.MINUTES.toMillis(1L), 100f)
-        "High Accuracy" -> Pair(TimeUnit.SECONDS.toMillis(5L), 10f)
-        else -> Pair(TimeUnit.SECONDS.toMillis(30L), 30f)
+    private fun locationRequestParams(profile: String): Pair<Long, Float> {
+        val minTime = prefs.tuningGpsMinIntervalMs.coerceAtLeast(1_000L)
+        val minDistance = prefs.tuningGpsMinDistanceMeters.coerceAtLeast(1f)
+        return when (profile) {
+            "Saver" -> Pair(TimeUnit.MINUTES.toMillis(1L), 100f)
+            "High Accuracy" -> Pair(TimeUnit.SECONDS.toMillis(5L), 10f)
+            else -> Pair(minTime, minDistance)
+        }
     }
 
     private fun stopLocationUpdates() {
@@ -164,6 +183,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
 
     override fun onStepCount(totalSteps: Long) {
         stepCount = totalSteps
+        sensorFixCount++
     }
 
     override fun onAccelerometerMagnitude(magnitude: Double) {}
@@ -201,6 +221,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
                 )
             )
         }
+        gpsFixCount++
     }
 
     private fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
@@ -247,7 +268,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
             serviceScope.launch {
                 database.runDao().insertRun(
                     RunEntity(
-                        id = 0L,
+                        id = runId,
                         startTimestamp = now - elapsedMs,
                         endTimestamp = now,
                         elapsedDurationSeconds = elapsedMs / 1000L,
@@ -268,10 +289,41 @@ class TrackingService : Service(), SensorAdapter.Callback {
                         modifiedAt = now
                     )
                 )
+                recordDiagnostics(runId, elapsedMs, distance)
             }
         }
         stopForeground(0)
         stopSelf()
+    }
+
+    private suspend fun recordDiagnostics(runId: Long, durationMs: Long, fusedDistanceMeters: Double) {
+        val batteryStart = batteryStartPct
+        val batteryEnd = getBatteryLevel()
+        // Compute battery consumed percent: (start - end), clamped to 0-100
+        val batteryConsumed = if (batteryStart != null && batteryEnd != null) {
+            (batteryStart - batteryEnd).coerceAtLeast(0).coerceAtMost(100)
+        } else 0
+        val batteryDurationMs = durationMs
+        val gpsCount = gpsFixCount
+        val sensorCount = sensorFixCount
+        val fusedVsGpsDelta = fusedDistanceMeters
+        val maxAccuracy = 0f // TODO: track worst-case across fixes
+        val accuracyRating = 3 // placeholder rating
+
+        val diagnostic = RunDiagnostic(
+            runId = runId,
+            batteryStartPercent = batteryStart,
+            batteryEndPercent = batteryEnd,
+            batteryConsumedPercent = batteryConsumed,
+            batteryDurationMs = batteryDurationMs,
+            gpsFixCount = gpsCount,
+            sensorFixCount = sensorCount,
+            fusedVsGpsDeltaMeters = fusedVsGpsDelta,
+            maxAccuracyMeters = maxAccuracy,
+            accuracyRating = accuracyRating
+        )
+
+        database.runDiagnosticDao().insertDiagnostic(diagnostic)
     }
 
     private fun discardRun() {
