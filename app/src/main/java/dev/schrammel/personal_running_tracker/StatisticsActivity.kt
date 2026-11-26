@@ -1,0 +1,169 @@
+package dev.schrammel.personal_running_tracker
+
+import android.app.Application
+import android.os.Bundle
+import android.widget.ArrayAdapter
+import android.widget.Spinner
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import dev.schrammel.personal_running_tracker.data.AppDatabase
+import dev.schrammel.personal_running_tracker.data.toRecord
+import dev.schrammel.personal_running_tracker.domain.split.GpsPoint
+import dev.schrammel.personal_running_tracker.domain.stats.Comparison
+import dev.schrammel.personal_running_tracker.domain.stats.PersonalRecord
+import dev.schrammel.personal_running_tracker.domain.stats.StatisticsEngine
+import dev.schrammel.personal_running_tracker.domain.stats.Totals
+import dev.schrammel.personal_running_tracker.model.TimeRange
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** Statistics section (spec §8): overview, comparison, rolling chart, personal records. */
+class StatisticsActivity : AppCompatActivity() {
+
+    private lateinit var overview: TextView
+    private lateinit var comparisonText: TextView
+    private lateinit var prText: TextView
+    private var selectedRange: TimeRange = TimeRange.LAST_30_DAYS
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_statistics)
+        overview = findViewById(R.id.statsOverview)
+        comparisonText = findViewById(R.id.statsComparison)
+        prText = findViewById(R.id.prText)
+
+        val ranges = listOf(
+            TimeRange.LAST_7_DAYS, TimeRange.LAST_30_DAYS, TimeRange.LAST_90_DAYS,
+            TimeRange.LAST_365_DAYS, TimeRange.CURRENT_WEEK, TimeRange.CURRENT_MONTH,
+            TimeRange.CURRENT_YEAR, TimeRange.PREVIOUS_YEAR, TimeRange.ALL_TIME,
+        )
+        val spinner = findViewById<Spinner>(R.id.rangeSpinner)
+        spinner.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item,
+            ranges.map { it.label }
+        )
+        spinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, pos: Int, id: Long) {
+                selectedRange = ranges[pos]
+                reload()
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+        reload()
+    }
+
+    private fun reload() {
+        lifecycleScope.launch {
+            val db = AppDatabase.getInstance(applicationContext as Application)
+            val now = System.currentTimeMillis()
+            val allRuns = withContext(Dispatchers.IO) { db.runDao().observeAllRuns().first().map { it.toRecord() } }
+
+            val filtered = StatisticsEngine.filterRuns(allRuns, selectedRange, now)
+            val totals = StatisticsEngine.totals(filtered, now)
+            overview.text = formatTotals(totals)
+
+            val previous = previousWindowTotals(allRuns, selectedRange, now)
+            comparisonText.text = if (previous == null) "" else {
+                val c = StatisticsEngine.compare(totals, previous)
+                formatComparison(c)
+            }
+
+            // Rolling 30-day distance chart (independent of the selected range)
+            val rolling = StatisticsEngine.rollingDistance(allRuns, 30, now)
+            findViewById<dev.schrammel.personal_running_tracker.view.BarChartView>(R.id.rollingChart)
+                .setValues(rolling.reversed().map { it.second.toFloat() })
+
+            prText.text = withContext(Dispatchers.IO) { computePersonalRecords(db) }
+        }
+    }
+
+    /** Previous equal-length calendar window for comparison (spec §8.5). */
+    private fun previousWindowTotals(
+        allRuns: List<dev.schrammel.personal_running_tracker.model.RunRecord>,
+        range: TimeRange,
+        now: Long,
+    ): Totals? {
+        val day = 86_400_000L
+        return when (range) {
+            TimeRange.LAST_7_DAYS, TimeRange.LAST_30_DAYS, TimeRange.LAST_90_DAYS, TimeRange.LAST_365_DAYS -> {
+                val len = when (range) {
+                    TimeRange.LAST_7_DAYS -> 7 * day
+                    TimeRange.LAST_30_DAYS -> 30 * day
+                    TimeRange.LAST_90_DAYS -> 90 * day
+                    else -> 365 * day
+                }
+                StatisticsEngine.totals(
+                    allRuns.filter { it.startTimestamp in (now - 2 * len) until (now - len) }, now
+                )
+            }
+            TimeRange.CURRENT_WEEK -> StatisticsEngine.totals(
+                allRuns.filter { it.startTimestamp in ((now - 14 * day)) until (now - 7 * day) }, now
+            )
+            TimeRange.CURRENT_MONTH -> StatisticsEngine.totals(
+                allRuns.filter { it.startTimestamp in ((now - 61 * day)) until (now - 30 * day) }, now
+            )
+            TimeRange.CURRENT_YEAR -> StatisticsEngine.totals(
+                allRuns.filter { it.startTimestamp in ((now - 730 * day)) until (now - 365 * day) }, now
+            )
+            else -> null
+        }
+    }
+
+    /** Best times over standard distances, computed from raw GPS observations (spec §8.3). */
+    private suspend fun computePersonalRecords(db: AppDatabase): String {
+        val targets = listOf(1000.0, 3000.0, 5000.0, 10000.0)
+        val best = mutableMapOf<Double, PersonalRecord>()
+        val runs = db.runDao().observeAllRuns().first()
+        for (run in runs) {
+            val points = db.gpsDao().getGpsForRun(run.id).map {
+                GpsPoint(it.latitude, it.longitude, it.altitudeMeters, it.timestamp)
+            }
+            for (target in targets) {
+                val pr = StatisticsEngine.bestTimeForDistance(points, target, run.id)
+                if (pr != null) {
+                    val cur = best[target]
+                    if (cur == null || pr.bestSeconds < cur.bestSeconds) best[target] = pr
+                }
+            }
+        }
+        if (best.isEmpty()) return "No GPS data yet"
+        return targets.mapNotNull { t ->
+            best[t]?.let { "%5.1f km  %d:%02d".format(t / 1000.0, it.bestSeconds / 60, it.bestSeconds % 60) }
+        }.joinToString("\n")
+    }
+
+    private fun formatTotals(t: Totals): String {
+        fun hms(s: Long) = "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
+        return buildString {
+            append("Runs:            %d\n".format(t.runCount))
+            append("Distance:        %.2f km\n".format(t.totalDistanceMeters / 1000.0))
+            append("Time:            %s\n".format(hms(t.totalElapsedSeconds)))
+            append("Moving:          %s\n".format(hms(t.totalMovingSeconds)))
+            append("Avg distance:    %.2f km\n".format(t.averageDistanceMeters / 1000.0))
+            append("Avg pace:        %d:%02d /km\n".format(
+                (t.averagePaceSecondsPerKm / 60).toInt(), (t.averagePaceSecondsPerKm % 60).toInt()))
+            append("Avg speed:       %.1f km/h\n".format(t.averageSpeedMetersPerSecond * 3.6))
+            append("Longest run:     %.2f km\n".format(t.longestRunMeters / 1000.0))
+            t.fastestRunPaceSecondsPerKm?.let {
+                append("Fastest run:     %d:%02d /km\n".format((it / 60).toInt(), (it % 60).toInt()))
+            }
+            append("Avg weekly:      %.2f km\n".format(t.averageWeeklyDistanceMeters / 1000.0))
+            append("Avg monthly:     %.2f km".format(t.averageMonthlyDistanceMeters / 1000.0))
+        }
+    }
+
+    private fun formatComparison(c: Comparison): String {
+        fun pct(v: Double?): String = if (v == null) "n/a" else "%+.1f%%".format(v)
+        return buildString {
+            append("vs previous period\n")
+            append("Distance: %+.1f km (%s)\n".format(c.absoluteDeltaDistanceMeters / 1000.0, pct(c.percentDeltaDistance)))
+            append("Runs:     %+d (%s)\n".format(c.absoluteDeltaRuns, pct(c.percentDeltaRuns)))
+            append("Time:     %+.0f min (%s)\n".format(c.absoluteDeltaSeconds / 60.0, pct(c.percentDeltaSeconds)))
+            c.percentDeltaPace?.let { append("Pace:     %s (negative = faster)\n".format(pct(it))) }
+            c.percentDeltaSpeed?.let { append("Speed:    %s".format(pct(it))) }
+        }
+    }
+}

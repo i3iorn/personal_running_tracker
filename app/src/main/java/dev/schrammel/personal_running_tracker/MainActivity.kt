@@ -117,6 +117,9 @@ class MainActivity : ComponentActivity() {
         binding.finishButton.setOnClickListener { finishRun() }
         binding.discardButton.setOnClickListener { discardRun() }
         binding.profileButton.setOnClickListener { cycleTrackingProfile() }
+        binding.statsButton.setOnClickListener {
+            startActivity(android.content.Intent(this, StatisticsActivity::class.java))
+        }
         binding.exportButton.setOnClickListener { exportData() }
         binding.runHistoryList.setOnItemClickListener { _, _, position, _ ->
             val run = repository.allRuns.value.getOrNull(position) ?: return@setOnItemClickListener
