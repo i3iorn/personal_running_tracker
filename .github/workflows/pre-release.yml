@@ -50,9 +50,23 @@ jobs:
           echo "Debug APK: $APK"
           ls -lh "$APK"
 
-      - name: Upload pre-release APK
-        uses: actions/upload-artifact@v4
+      - name: Create pre-release tag
+        if: github.ref != 'refs/tags/latest-pre'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f latest-pre
+          git push -f origin latest-pre
+
+      - name: Create GitHub Pre-Release
+        if: github.ref != 'refs/tags/latest-pre'
+        uses: softprops/action-gh-release@v2
         with:
-          name: pre-release-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          tag_name: latest-pre
+          name: Pre-Release ${{ github.run_number }}
+          files: app/build/outputs/apk/debug/app-debug.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -42,6 +42,7 @@ enum class TimeRange(val label: String) {
     LAST_30_DAYS("Last 30 days"),
     LAST_90_DAYS("Last 90 days"),
     LAST_365_DAYS("Last 365 days"),
+    CUSTOM("Custom date range"),
     CURRENT_WEEK("Current week"),
     CURRENT_MONTH("Current month"),
     CURRENT_YEAR("Current year"),
