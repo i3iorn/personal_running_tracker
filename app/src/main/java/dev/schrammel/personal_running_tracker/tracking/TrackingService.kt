@@ -14,6 +14,7 @@ import dev.schrammel.personal_running_tracker.data.AppDatabase
 import dev.schrammel.personal_running_tracker.data.GpsEntity
 import dev.schrammel.personal_running_tracker.data.RunEntity
 import dev.schrammel.personal_running_tracker.data.RunDiagnostic
+import dev.schrammel.personal_running_tracker.data.RunEvent
 import dev.schrammel.personal_running_tracker.data.RunStateEntity
 import dev.schrammel.personal_running_tracker.data.SplitEntity
 import dev.schrammel.personal_running_tracker.domain.split.GpsPoint
@@ -38,6 +39,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         const val ACTION_RESUME_RUN = "action_resume_run"
         const val ACTION_FINISH_RUN = "action_finish_run"
         const val ACTION_DISCARD_RUN = "action_discard_run"
+        const val ACTION_MARK_RUN = "action_mark_run"
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -73,6 +75,15 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private var fusion: SensorFusion? = null
     private var baseDistanceMeters: Double = 0.0
     private var rawGpsDistanceMeters: Double = 0.0
+    private val pendingGps = mutableListOf<GpsEntity>()
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
+    private var markerCount: Int = 0
+    @Volatile private var currentBatteryPct: Int? = null
+    // Run/walk classification (ultra review #5)
+    private var accumRunMs: Long = 0L
+    private var accumWalkMs: Long = 0L
+    private var runSegmentMs: Long = 0L
+    private var walkSegmentMs: Long = 0L
     private val recentSpeeds = ArrayDeque<Pair<Long, Float>>() // (timeMs, speedMps)
     @Volatile private var lastFinishedRunId: Long = 0L
 
@@ -81,6 +92,32 @@ class TrackingService : Service(), SensorAdapter.Callback {
     fun currentElapsedMs(): Long = accumElapsedMs + (if (isPaused) 0L else System.currentTimeMillis() - segmentStartMs)
     fun currentDistanceMeters(): Double = currentDistanceMeters
     fun currentAccuracyMeters(): Float? = lastAccuracyMeters
+
+    /** Current movement state for the live display: "RUN", "WALK" or null (unknown/stationary). */
+    fun currentMovementState(): String? = when {
+        isPaused -> "PAUSED"
+        !isRunning -> null
+        else -> {
+            val speed = currentSmoothedSpeedMps()
+            when {
+                speed == null -> null
+                speed >= prefs.runningSpeedThresholdMps -> "RUN"
+                else -> "WALK"
+            }
+        }
+    }
+
+    /** Live battery percent, refreshed on the persist loop (off main thread). */
+    fun currentBatteryPercent(): Int? = currentBatteryPct
+
+    /** Battery drain per hour over the run so far; negative = draining. */
+    fun batteryRatePerHour(): Int? {
+        val start = batteryStartPct ?: return null
+        val now = currentBatteryPct ?: return null
+        val elapsedH = currentElapsedMs() / 3_600_000.0
+        if (elapsedH < 0.25) return null  // too early for a stable rate
+        return (((start - now) / elapsedH)).toInt()
+    }
 
     /** Smoothed current speed (m/s). The effective window scales up to cover the
      * configured GPS fix interval so the buffer never sits empty between fixes. */
@@ -109,10 +146,50 @@ class TrackingService : Service(), SensorAdapter.Callback {
         createNotificationChannel()
         serviceScope.launch { restoreInterruptedRun() }
         serviceScope.launch {
-            // Persist tracking state every 5 s while a run is active (spec §14)
+            // Persist tracking state + flush queued GPS fixes on the configured cadence
             while (true) {
                 kotlinx.coroutines.delay(prefs.statePersistIntervalMs.coerceAtLeast(1_000L))
-                if (isRunning) persistState()
+                if (isRunning) {
+                    currentBatteryPct = getBatteryLevel()
+                    maybeAutoSwitchToSaver()
+                    persistState()
+                    flushPendingGps()
+                }
+            }
+        }
+    }
+
+    /** Low battery strategy: auto-switch to Saver to stretch the remaining charge. */
+    private suspend fun maybeAutoSwitchToSaver() {
+        val level = currentBatteryPct ?: return
+        if (level <= prefs.lowBatteryThresholdPercent && trackingProfile != "Saver" && isRunning && !isPaused) {
+            trackingProfile = "Saver"
+            prefs.trackingProfile = "Saver"
+            stopLocationUpdates()
+            startLocationUpdates(trackingProfile)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(
+                1,
+                NotificationCompat.Builder(this, "tracking_service_channel")
+                    .setContentTitle("Personal Running Tracker")
+                    .setContentText("Low battery ($level%) — switched to Battery Saver")
+                    .setSmallIcon(dev.schrammel.personal_running_tracker.R.drawable.ic_runner)
+                    .setOngoing(true)
+                    .build()
+            )
+        }
+    }
+
+    /** Batch GPS inserts (ultra review #4): fewer transactions, less disk wakeups. */
+    private suspend fun flushPendingGps() {
+        val batch = synchronized(pendingGps) {
+            val copy = pendingGps.toList()
+            pendingGps.clear()
+            copy
+        }
+        if (batch.isNotEmpty()) {
+            database.withTransaction {
+                batch.forEach { database.gpsDao().insertGps(it) }
             }
         }
     }
@@ -132,6 +209,10 @@ class TrackingService : Service(), SensorAdapter.Callback {
         trackingProfile = state.trackingProfile
         batteryStartPct = state.batteryStartPct
         movingSegmentMs = prefs.runStateMovingSegmentMs
+        accumRunMs = prefs.runStateRunMs
+        accumWalkMs = prefs.runStateWalkMs
+        runSegmentMs = 0L
+        walkSegmentMs = 0L
         // Rebuild fusion from the restored distance; anchors resume reconciliation
         // from here without double counting (pending sensor distance starts at 0).
         fusion = SensorFusion(
@@ -143,6 +224,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
 
     private suspend fun persistState() {
         prefs.runStateMovingSegmentMs = movingSegmentMs
+        prefs.runStateRunMs = accumRunMs + runSegmentMs
+        prefs.runStateWalkMs = accumWalkMs + walkSegmentMs
         database.runStateDao().upsert(
             RunStateEntity(
                 runId = runId, isRunning = isRunning, isPaused = isPaused,
@@ -171,6 +254,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
             ACTION_RESUME_RUN -> { resumeRun(); START_NOT_STICKY }
             ACTION_FINISH_RUN -> { finishRun(); START_NOT_STICKY }
             ACTION_DISCARD_RUN -> { discardRun(); START_NOT_STICKY }
+            ACTION_MARK_RUN -> { markRun(); START_NOT_STICKY }
             else -> START_NOT_STICKY
         }
     }
@@ -186,6 +270,11 @@ class TrackingService : Service(), SensorAdapter.Callback {
             accumMovingMs = 0L
             movingSegmentMs = 0L
             lastFixTimeMs = 0L
+            accumRunMs = 0L
+            accumWalkMs = 0L
+            runSegmentMs = 0L
+            walkSegmentMs = 0L
+            markerCount = 0
             segmentStartMs = System.currentTimeMillis()
             currentDistanceMeters = 0.0
             lastLat = null
@@ -320,19 +409,25 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val prevLat = lastLat
         val prevLng = lastLng
         val gapMs = if (lastFixTimeMs > 0) (timeMs - lastFixTimeMs).coerceAtLeast(0) else 0L
+        val segment = if (prevLat != null && prevLng != null) haversineMeters(prevLat, prevLng, lat, lng) else 0.0
+        val accuracy = location.accuracy.coerceAtLeast(0f)
+        // Outlier rejection: a wild inaccurate fix must not poison the route,
+        // distance, splits or map. Drop it entirely and keep the previous anchor.
+        if (dev.schrammel.personal_running_tracker.domain.gps.FixPlausibility.isImplausible(
+                segment, gapMs, accuracy)
+        ) {
+            return
+        }
         lastFixTimeMs = timeMs
         lastFixGapMs = gapMs
-        if (prevLat != null && prevLng != null) {
-            rawGpsDistanceMeters += haversineMeters(prevLat, prevLng, lat, lng)
-        }
-        val accuracy = location.accuracy.coerceAtLeast(0f)
+        rawGpsDistanceMeters += segment
         if (accuracy > maxAccuracyMetersSeen) maxAccuracyMetersSeen = accuracy
         lastAccuracyMeters = accuracy
         // Speed: trust the GPS-reported value when present, otherwise derive it
         // from the segment distance/time (reported speed is often 0 on network fixes).
         val reported = location.speed.coerceAtLeast(0f)
-        val segmentSpeed = if (prevLat != null && prevLng != null && gapMs > 0) {
-            (haversineMeters(prevLat, prevLng, lat, lng) / (gapMs / 1000.0)).toFloat()
+        val segmentSpeed = if (prevLat != null && gapMs > 0) {
+            (segment / (gapMs / 1000.0)).toFloat()
         } else reported
         val effectiveSpeed = if (reported > 0.5f) reported else segmentSpeed.coerceAtLeast(0f)
         recentSpeeds.addLast(timeMs to effectiveSpeed)
@@ -353,30 +448,33 @@ class TrackingService : Service(), SensorAdapter.Callback {
             currentDistanceMeters = baseDistanceMeters + update.totalDistanceMeters
         }
 
-        // Auto-pause: stationary periods do not accumulate moving time (spec §10)
+        // Auto-pause: when enabled, stationary periods do not accumulate moving
+        // time (spec §10). Run vs walk is classified separately for ultra efforts.
         val stationaryThresholdMps = 0.2 + prefs.autoPauseSensitivity * 0.03
-        if (!isPaused && gapMs > 0 && prefs.autoPauseEnabled &&
-            effectiveSpeed < stationaryThresholdMps
-        ) {
-            // stationary: elapsed time still runs, moving time does not
-        } else if (!isPaused && gapMs > 0) {
-            movingSegmentMs += gapMs
+        val moving = !isPaused && gapMs > 0 &&
+            (!prefs.autoPauseEnabled || effectiveSpeed >= stationaryThresholdMps)
+        if (moving) {
+            if (effectiveSpeed >= prefs.runningSpeedThresholdMps) runSegmentMs += gapMs
+            else walkSegmentMs += gapMs
         }
+        // Partial wake lock while actually moving; released when stationary/paused (ultra #13)
+        updateWakeLock(moving)
         if (isRunning) updateNotificationText(accuracy)
         lastLat = lat
         lastLng = lng
 
-        serviceScope.launch {
-            database.gpsDao().insertGps(
+        // Queue the fix; persisted in batches on the persist loop (ultra #4)
+        synchronized(pendingGps) {
+            pendingGps.add(
                 GpsEntity(
                     runId = runId,
                     timestamp = timeMs,
                     latitude = lat,
                     longitude = lng,
                     altitudeMeters = location.altitude.toDouble(),
-                    horizontalAccuracyMeters = location.accuracy.toFloat(),
+                    horizontalAccuracyMeters = accuracy,
                     verticalAccuracyMeters = 0f,
-                    speedMetersPerSecond = location.speed.coerceAtLeast(0.0f),
+                    speedMetersPerSecond = effectiveSpeed,
                     bearingDegrees = location.bearing.coerceAtLeast(0.0f),
                     provider = location.provider ?: "unknown",
                     measurementQuality = 1
@@ -384,6 +482,19 @@ class TrackingService : Service(), SensorAdapter.Callback {
             )
         }
         gpsFixCount++
+    }
+
+    private fun updateWakeLock(needed: Boolean) {
+        val wm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        if (needed && wakeLock == null) {
+            wakeLock = wm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "prt:moving").apply {
+                setReferenceCounted(false)
+                acquire(30 * 60 * 1000L) // safety cap; re-acquired on next moving fix
+            }
+        } else if (!needed && wakeLock != null) {
+            wakeLock?.release()
+            wakeLock = null
+        }
     }
 
     private fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
@@ -401,9 +512,14 @@ class TrackingService : Service(), SensorAdapter.Callback {
         if (!isRunning || isPaused) return
         val now = System.currentTimeMillis()
         accumElapsedMs += now - segmentStartMs
-        // Moving time is accumulated per fix in onLocationChanged (auto-pause aware)
+        // Run/walk times are accumulated per fix in onLocationChanged (auto-pause aware)
+        accumRunMs += runSegmentMs
+        accumWalkMs += walkSegmentMs
+        runSegmentMs = 0
+        walkSegmentMs = 0
         accumMovingMs += movingSegmentMs
         movingSegmentMs = 0
+        updateWakeLock(false)
         isPaused = true
         stopLocationUpdates()
         stopSensorUpdates()
@@ -412,6 +528,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private fun resumeRun() {
         if (!isRunning || !isPaused) return
         isPaused = false
+        runSegmentMs = 0L
+        walkSegmentMs = 0L
         movingSegmentMs = 0L
         segmentStartMs = System.currentTimeMillis()
         startLocationUpdates(trackingProfile)
@@ -424,13 +542,21 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val now = System.currentTimeMillis()
         val elapsedMs = accumElapsedMs + (if (wasPaused) 0L else now - segmentStartMs)
         val movingMs = accumMovingMs + movingSegmentMs
+        val runMs = accumRunMs + runSegmentMs
+        val walkMs = accumWalkMs + walkSegmentMs
         isRunning = false
         isPaused = false
+        updateWakeLock(false)
         stopLocationUpdates()
         stopSensorUpdates()
         val distance = currentDistanceMeters
         if (runId > 0L) {
             serviceScope.launch {
+                // Flush queued fixes first: elevation, splits and PR cache read from the DB
+                flushPendingGps()
+                val gpsRows = database.gpsDao().getGpsForRun(runId)
+                val (gain, loss) = dev.schrammel.personal_running_tracker.domain.elevation.ElevationCalculator
+                    .totals(gpsRows.map { it.altitudeMeters })
                 // Single transaction: run + diagnostics + splits commit or roll back together
                 database.withTransaction {
                     database.runDao().insertRun(
@@ -445,19 +571,22 @@ class TrackingService : Service(), SensorAdapter.Callback {
                         originalDistanceMeters = distance,
                         averagePaceSecondsPerMeter = if (distance > 0.0) (elapsedMs.toDouble() / 1000.0) / distance else 0.0,
                         averageSpeedMetersPerSecond = if (distance > 0.0) distance / (elapsedMs.toDouble() / 1000.0) else 0.0,
-                        elevationGainMeters = 0.0,
-                        elevationLossMeters = 0.0,
+                        elevationGainMeters = gain,
+                        elevationLossMeters = loss,
                         stepCount = stepCount,
                         trackingProfile = trackingProfile,
                         trackingAlgorithmVersion = "1.0.0",
                         userAdjusted = false,
                         notes = "",
+                        runningDurationSeconds = runMs / 1000L,
+                        walkingDurationSeconds = walkMs / 1000L,
                         createdAt = now,
                         modifiedAt = now
                     )
                     )
                     recordDiagnostics(runId, elapsedMs, distance)
                     computeAndStoreSplits(runId)
+                    updatePersonalRecordCache(runId)
                 }
                 database.runStateDao().clear()
             }
@@ -474,6 +603,28 @@ class TrackingService : Service(), SensorAdapter.Callback {
         lastFinishedRunId.takeIf { it > 0L }?.let {
             database.runDiagnosticDao().getDiagnosticByRunId(it)
         }
+
+    /** Incremental PR cache update: keep the best time per configured distance. */
+    private suspend fun updatePersonalRecordCache(runId: Long) {
+        val targets = prefs.prDistanceKmList.split(",")
+            .mapNotNull { it.trim().toDoubleOrNull() }.filter { it > 0 }.map { it * 1000.0 }
+        val points = database.gpsDao().getGpsForRun(runId).map {
+            dev.schrammel.personal_running_tracker.domain.split.GpsPoint(
+                it.latitude, it.longitude, it.altitudeMeters, it.timestamp)
+        }
+        for (target in targets) {
+            val pr = dev.schrammel.personal_running_tracker.domain.stats.StatisticsEngine
+                .bestTimeForDistance(points, target, runId) ?: continue
+            val current = database.personalRecordCacheDao().get(target)
+            if (current == null || pr.bestSeconds < current.bestSeconds) {
+                database.personalRecordCacheDao().upsert(
+                    dev.schrammel.personal_running_tracker.data.PersonalRecordCache(
+                        distanceMeters = target, bestSeconds = pr.bestSeconds,
+                        runId = runId, updatedAt = System.currentTimeMillis())
+                )
+            }
+        }
+    }
 
     private suspend fun computeAndStoreSplits(runId: Long) {
         val points = database.gpsDao().getGpsForRun(runId).map {
@@ -536,16 +687,35 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private fun discardRun() {
         isRunning = false
         isPaused = false
+        synchronized(pendingGps) { pendingGps.clear() }  // discarded run must not persist queued fixes
         stopLocationUpdates()
         stopSensorUpdates()
+        updateWakeLock(false)
         serviceScope.launch { database.runStateDao().clear() }
         stopForeground(0)
         stopSelf()
     }
 
+    /** Mid-run marker (aid station, crew stop) — recorded without pausing (ultra #9). */
+    private fun markRun() {
+        if (!isRunning) return
+        markerCount++
+        val now = System.currentTimeMillis()
+        val eventId = runId
+        serviceScope.launch {
+            database.runEventDao().insert(
+                RunEvent(
+                    runId = eventId, timestamp = now,
+                    label = "Marker $markerCount", type = "MARKER",
+                )
+            )
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        updateWakeLock(false)
         stopLocationUpdates()
         stopSensorUpdates()
     }

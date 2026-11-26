@@ -49,6 +49,7 @@ class RunDetailActivity : AppCompatActivity() {
         mapView = findViewById(R.id.mapView)
         statsText = findViewById(R.id.detailStats)
         splitsText = findViewById(R.id.splitsText)
+        splitsText.movementMethod = android.text.method.ScrollingMovementMethod()
         mapView.onCreate(savedInstanceState)
 
         val db = AppDatabase.getInstance(applicationContext as Application)
@@ -94,11 +95,10 @@ class RunDetailActivity : AppCompatActivity() {
                 val name = run.notes.lineSequence().firstOrNull { it.isNotBlank() }?.take(30) ?: "Run ${run.id}"
                 findViewById<TextView>(R.id.detailTitle).text = name
                 statsText.text = String.format(
-                    "%.2f %s  •  %d:%02d  •  %.1f %s",
+                    "%.2f %s  •  %s  •  %.1f %s",
                     units.distance(run.distanceMeters, prefs.distanceUnit),
                     units.distanceLabel(prefs.distanceUnit),
-                    it.elapsedDurationSeconds / 60,
-                    it.elapsedDurationSeconds % 60,
+                    units.durationText(it.elapsedDurationSeconds),
                     units.speed(it.averageSpeedMetersPerSecond, prefs.distanceUnit),
                     units.speedLabel(prefs.distanceUnit),
                 )
@@ -106,7 +106,11 @@ class RunDetailActivity : AppCompatActivity() {
             splitsText.text = if (splits.isEmpty()) "No splits recorded" else {
                 val prefs = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this@RunDetailActivity)
                 val units = dev.schrammel.personal_running_tracker.domain.units.Units
-                splits.joinToString("\n") { s ->
+                // Compact mode for very long runs (ultra #8): show every 5th split + the last
+                val shown = if (splits.size > 20)
+                    splits.filterIndexed { i, _ -> (i + 1) % 5 == 0 || i == splits.size - 1 }
+                else splits
+                val splitLines = shown.joinToString("\n") { s ->
                     "Split %d: %.2f %s in %d:%02d (%.1f %s, %+d m)".format(
                         s.splitNumber,
                         units.distance(s.distanceMeters, prefs.distanceUnit),
@@ -116,6 +120,12 @@ class RunDetailActivity : AppCompatActivity() {
                         units.speedLabel(prefs.distanceUnit),
                         s.elevationChangeMeters.toInt(),
                     )
+                }
+                val markers = withContext(Dispatchers.IO) { db.runEventDao().getEventsForRun(runId) }
+                if (markers.isEmpty()) splitLines
+                else splitLines + "\n" + markers.joinToString("\n") { m ->
+                    val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
+                    "• %s at %s".format(m.label, fmt.format(java.util.Date(m.timestamp)))
                 }
             }
 
@@ -176,6 +186,19 @@ class RunDetailActivity : AppCompatActivity() {
                     val km = distanceInput.text.toString().toDoubleOrNull() ?: return@setPositiveButton
                     lifecycleScope.launch(Dispatchers.IO) {
                         val newDistance = km * 1000.0
+                        // Snapshot before editing (ultra #11): original values stay recoverable
+                        run {
+                            val dir = java.io.File(getExternalFilesDir(null), "export/edits").apply { mkdirs() }
+                            val json = org.json.JSONObject().apply {
+                                put("runId", run.id)
+                                put("distanceMeters", run.distanceMeters)
+                                put("notes", run.notes)
+                                put("originalDistanceMeters", run.originalDistanceMeters)
+                                put("snapshotAt", System.currentTimeMillis())
+                            }
+                            java.io.File(dir, "run-${run.id}-${System.currentTimeMillis()}.json")
+                                .writeText(json.toString(2))
+                        }
                         // Manual corrections must not overwrite original measurements (spec §7.2)
                         val updated = run.copy(
                             distanceMeters = newDistance,

@@ -53,10 +53,12 @@ class MainActivity : ComponentActivity() {
                 val units = dev.schrammel.personal_running_tracker.domain.units.Units
                 // Screen-on preference only applies while a run is active
                 binding.root.keepScreenOn = prefs.screenOnEnabled
-                binding.elapsedText.text = formatElapsed(svc.currentElapsedMs())
-                binding.distanceText.text = String.format(
+                val elapsed = svc.currentElapsedMs()
+                binding.elapsedText.text = formatElapsed(elapsed)
+                val distanceText = String.format(
                     "%.2f %s", units.distance(svc.currentDistanceMeters(), prefs.distanceUnit),
                     units.distanceLabel(prefs.distanceUnit))
+                binding.distanceText.text = distanceText
                 val accuracy = svc.currentAccuracyMeters()
                 val speed = svc.currentSmoothedSpeedMps()
                 // Confidence gate: hide instantaneous pace when GPS quality is poor
@@ -71,6 +73,29 @@ class MainActivity : ComponentActivity() {
                         units.speed(speed ?: 0.0, prefs.distanceUnit), units.speedLabel(prefs.distanceUnit))
                 }
                 binding.accuracyText.text = if (accuracy != null) "± %.0f m".format(accuracy) else "± -- m"
+                // Ultra mode (ultra #1): hide secondary metrics while running
+                val ultra = prefs.ultraModeEnabled
+                binding.labelPace.visibility = if (ultra) View.GONE else View.VISIBLE
+                binding.labelSpeed.visibility = if (ultra) View.GONE else View.VISIBLE
+                binding.labelDistance.visibility = if (ultra) View.GONE else View.VISIBLE
+                binding.paceText.visibility = if (ultra) View.GONE else View.VISIBLE
+                binding.speedText.visibility = if (ultra) View.GONE else View.VISIBLE
+                binding.accuracyText.visibility = if (ultra) View.GONE else View.VISIBLE
+                // Movement state + live battery drain rate (ultra #2, #5)
+                val state = svc.currentMovementState()
+                val rate = svc.batteryRatePerHour()
+                binding.statusText.text = buildString {
+                    append("Tracking")
+                    state?.let { append(" • $it") }
+                    rate?.let { append(" • −$it%/h") }
+                }
+            } else {
+                binding.labelPace.visibility = View.VISIBLE
+                binding.labelSpeed.visibility = View.VISIBLE
+                binding.labelDistance.visibility = View.VISIBLE
+                binding.paceText.visibility = View.VISIBLE
+                binding.speedText.visibility = View.VISIBLE
+                binding.accuracyText.visibility = View.VISIBLE
             }
             uiHandler.postDelayed(this, 1000L)
         }
@@ -127,6 +152,12 @@ class MainActivity : ComponentActivity() {
         binding.pauseButton.setOnClickListener { pauseRun() }
         binding.finishButton.setOnClickListener { finishRun() }
         binding.discardButton.setOnClickListener { discardRun() }
+        binding.markButton.setOnClickListener {
+            startService(Intent(this, TrackingService::class.java).apply {
+                action = TrackingService.ACTION_MARK_RUN
+            })
+            binding.statusText.text = "Marker recorded"
+        }
         binding.profileButton.setOnClickListener { cycleTrackingProfile() }
         binding.statsButton.setOnClickListener {
             startActivity(android.content.Intent(this, StatisticsActivity::class.java))
@@ -327,13 +358,11 @@ class MainActivity : ComponentActivity() {
             HistoryAdapter.Row(
                 runId = run.id,
                 title = name,
-                subtitle = "%s  •  %.2f %s  •  %d:%02d:%02d".format(
+                subtitle = "%s  •  %.2f %s  •  %s".format(
                     fmt.format(java.util.Date(run.startTimestamp)),
                     units.distance(run.distanceMeters, prefs.distanceUnit),
                     units.distanceLabel(prefs.distanceUnit),
-                    run.elapsedDurationSeconds / 3600,
-                    (run.elapsedDurationSeconds % 3600) / 60,
-                    run.elapsedDurationSeconds % 60,
+                    units.durationText(run.elapsedDurationSeconds),
                 ),
             )
         })
@@ -482,18 +511,14 @@ class MainActivity : ComponentActivity() {
             append("Distance: %.2f %s\n".format(
                 units.distance(run.distanceMeters, prefs.distanceUnit),
                 units.distanceLabel(prefs.distanceUnit)))
-            append("Duration: %d:%02d:%02d\n".format(
-                run.elapsedDurationSeconds / 3600,
-                (run.elapsedDurationSeconds % 3600) / 60,
-                run.elapsedDurationSeconds % 60))
-            append("Moving: %d:%02d:%02d\n".format(
-                run.movingDurationSeconds / 3600,
-                (run.movingDurationSeconds % 3600) / 60,
-                run.movingDurationSeconds % 60))
-            append("Paused: %d:%02d:%02d\n".format(
-                run.pausedDurationSeconds / 3600,
-                (run.pausedDurationSeconds % 3600) / 60,
-                run.pausedDurationSeconds % 60))
+            append("Duration: %s\n".format(units.durationText(run.elapsedDurationSeconds)))
+            append("Moving: %s\n".format(units.durationText(run.movingDurationSeconds)))
+            append("Paused: %s\n".format(units.durationText(run.pausedDurationSeconds)))
+            // Run/walk breakdown (ultra #5)
+            if (run.runningDurationSeconds > 0 || run.walkingDurationSeconds > 0) {
+                append("Running: %s\n".format(units.durationText(run.runningDurationSeconds)))
+                append("Walking: %s\n".format(units.durationText(run.walkingDurationSeconds)))
+            }
             append("Avg pace: %s %s\n".format(
                 units.paceText(run.averagePaceSecondsPerMeter, prefs.paceUnit),
                 units.paceLabel(prefs.paceUnit)))
@@ -501,6 +526,10 @@ class MainActivity : ComponentActivity() {
                 units.speed(run.averageSpeedMetersPerSecond, prefs.distanceUnit),
                 units.speedLabel(prefs.distanceUnit)))
             append("Steps: %d\n".format(run.stepCount))
+            if (run.elevationGainMeters > 0 || run.elevationLossMeters > 0) {
+                append("Elevation: +%.0f m / −%.0f m\n".format(
+                    run.elevationGainMeters, run.elevationLossMeters))
+            }
             if (diag != null) {
                 append("\nBattery: %s%% used (start %s%%, end %s%%)\n".format(
                     diag.batteryConsumedPercent.toString(),

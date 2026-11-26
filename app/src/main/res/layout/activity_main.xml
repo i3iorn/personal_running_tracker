@@ -75,6 +75,7 @@
                     android:orientation="vertical">
 
                     <TextView
+                        android:id="@+id/labelDistance"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="DISTANCE"
@@ -101,6 +102,7 @@
                     android:orientation="vertical">
 
                     <TextView
+                        android:id="@+id/labelPace"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="PACE"
@@ -127,6 +129,7 @@
                     android:orientation="vertical">
 
                     <TextView
+                        android:id="@+id/labelSpeed"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="SPEED"
@@ -299,6 +302,15 @@
             android:layout_weight="1"
             android:layout_marginStart="8dp"
             android:text="Pause" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/markButton"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="0.7"
+            android:layout_marginStart="8dp"
+            android:text="Mark" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/discardButton"

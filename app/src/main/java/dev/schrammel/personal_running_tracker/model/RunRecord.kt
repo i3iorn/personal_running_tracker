@@ -18,6 +18,8 @@ data class RunRecord(
     val trackingAlgorithmVersion: String,
     val userAdjusted: Boolean = false,
     val notes: String = "",
+    val runningDurationSeconds: Long = 0,
+    val walkingDurationSeconds: Long = 0,
     val createdAt: Long,
     val modifiedAt: Long,
 )

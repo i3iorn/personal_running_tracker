@@ -37,4 +37,11 @@ object Units {
         val s = paceSecondsPerUnit(secondsPerMeter, paceUnit).coerceAtLeast(0.0)
         return "%d:%02d".format((s / 60).toInt(), (s % 60).toInt())
     }
+
+    /** Duration text that stays unambiguous past 24 h ("1d 02:30:07") — ultras think in days. */
+    fun durationText(seconds: Long): String {
+        val s = seconds.coerceAtLeast(0)
+        if (s < 86_400) return "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
+        return "%dd %02d:%02d:%02d".format(s / 86_400, (s % 86_400) / 3600, (s % 3600) / 60, s % 60)
+    }
 }

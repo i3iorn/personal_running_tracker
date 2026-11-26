@@ -83,6 +83,14 @@ class TrackingPreferences(context: Context) {
         get() = prefs.getLong("run_state_moving_segment_ms", 0L)
         set(value) { prefs.edit().putLong("run_state_moving_segment_ms", value).apply() }
 
+    var runStateRunMs: Long
+        get() = prefs.getLong("run_state_run_ms", 0L)
+        set(value) { prefs.edit().putLong("run_state_run_ms", value).apply() }
+
+    var runStateWalkMs: Long
+        get() = prefs.getLong("run_state_walk_ms", 0L)
+        set(value) { prefs.edit().putLong("run_state_walk_ms", value).apply() }
+
     // ----- New settings from the security/performance pass -----
     // GPX import size cap in MB (DoS guard)
     var importMaxMb: Int
@@ -97,6 +105,21 @@ class TrackingPreferences(context: Context) {
     var chartWeeks: Int
         get() = prefs.getInt("chart_weeks", 8).coerceIn(1, 52)
         set(value) { prefs.edit().putInt("chart_weeks", value).apply() }
+
+    /** Ultra mode: minimal display while running (big elapsed + distance only). */
+    var ultraModeEnabled: Boolean
+        get() = prefs.getBoolean("ultra_mode_enabled", false)
+        set(value) { prefs.edit().putBoolean("ultra_mode_enabled", value).apply() }
+
+    /** Auto-switch to Battery Saver at this level while a run is active. */
+    var lowBatteryThresholdPercent: Int
+        get() = prefs.getInt("low_battery_threshold_percent", 15).coerceIn(5, 50)
+        set(value) { prefs.edit().putInt("low_battery_threshold_percent", value).apply() }
+
+    /** Speed above which a fix is classified as running rather than walking (m/s). */
+    var runningSpeedThresholdMps: Float
+        get() = prefs.getFloat("running_speed_threshold_mps", 2.2f).coerceIn(0.5f, 6f)
+        set(value) { prefs.edit().putFloat("running_speed_threshold_mps", value).apply() }
 
     // ----- Validated getters: every expert setting is clamped at this single
     // choke point so a bad value in Settings cannot break the engine. -----

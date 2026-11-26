@@ -47,10 +47,10 @@
     <TextView
         android:id="@+id/splitsText"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="200dp"
         android:padding="12dp"
-        android:maxLines="8"
         android:scrollbars="vertical"
+        android:fadeScrollbars="false"
         android:text=""
         android:textColor="@color/rt_on_surface"
         android:textSize="13sp" />

@@ -23,6 +23,8 @@ data class RunEntity(
     val trackingAlgorithmVersion: String,
     val userAdjusted: Boolean = false,
     val notes: String = "",
+    val runningDurationSeconds: Long = 0,
+    val walkingDurationSeconds: Long = 0,
     val createdAt: Long,
     val modifiedAt: Long,
 )
@@ -43,6 +45,8 @@ fun RunEntity.toRecord(): RunRecord = RunRecord(
     trackingAlgorithmVersion = trackingAlgorithmVersion,
     userAdjusted = userAdjusted,
     notes = notes,
+    runningDurationSeconds = runningDurationSeconds,
+    walkingDurationSeconds = walkingDurationSeconds,
     createdAt = createdAt,
     modifiedAt = modifiedAt,
 )

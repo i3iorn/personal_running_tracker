@@ -43,6 +43,14 @@ class SettingsActivity : AppCompatActivity() {
         seek("Auto-pause sensitivity (0-10)", 0, 10,
             { prefs.autoPauseSensitivity }, { prefs.autoPauseSensitivity = it })
         switch("Keep screen on during run", { prefs.screenOnEnabled }, { prefs.screenOnEnabled = it })
+        switch("Ultra mode (minimal display while running)", { prefs.ultraModeEnabled },
+            { prefs.ultraModeEnabled = it })
+
+        section("Run / walk & long efforts")
+        slider("Running speed threshold (above = RUN)", 1.0, 4.0, 0.1, { prefs.runningSpeedThresholdMps.toDouble() },
+            { prefs.runningSpeedThresholdMps = it.toFloat() }, "m/s", 2.2)
+        slider("Low battery auto-Saver threshold", 5.0, 30.0, 1.0, { prefs.lowBatteryThresholdPercent.toDouble() },
+            { prefs.lowBatteryThresholdPercent = it.toInt() }, "%", 15.0)
 
         section("GPS scheduling (expert — bad values kill battery or accuracy)")
         slider("Battery Saver: GPS min interval", 1.0, 120.0, 1.0, { prefs.saverGpsMinIntervalMs / 1000.0 },

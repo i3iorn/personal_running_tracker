@@ -1,9 +1,19 @@
+import java.io.File
+
 plugins {
     id("com.android.application") version "9.5.0"
     id("com.google.devtools.ksp") version "2.3.12"
+    // CVE scan of the dependency tree: gradle dependencyCheckAnalyze
+    id("org.owasp.dependencycheck") version "12.1.0"
 }
 
-import java.io.File
+dependencyCheck {
+    // Scan only dependency configurations, not this project's own artifacts
+    analyzers {
+        assemblyEnabled = false
+    }
+    failBuildOnCVSS = 9.0f
+}
 
 android {
     namespace = "dev.schrammel.personal_running_tracker"

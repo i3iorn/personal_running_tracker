@@ -138,7 +138,8 @@ class StatisticsActivity : AppCompatActivity() {
         }
     }
 
-    /** Best times over user-configurable distances, computed from raw GPS observations (spec §8.3). */
+    /** Best times from the incremental PR cache; falls back to a full scan
+     *  when the cache is empty (e.g. data recorded before the cache existed). */
     private suspend fun computePersonalRecords(db: AppDatabase): String {
         val prefs = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this)
         val targets = prefs.prDistanceKmList.split(",")
@@ -146,6 +147,17 @@ class StatisticsActivity : AppCompatActivity() {
             .filter { it > 0 }
             .map { it * 1000.0 }
         if (targets.isEmpty()) return "No PR distances configured"
+
+        val cache = db.personalRecordCacheDao().getAll()
+        if (cache.isNotEmpty()) {
+            return targets.mapNotNull { t ->
+                cache.firstOrNull { it.distanceMeters == t }?.let {
+                    "%5.1f km  %d:%02d".format(t / 1000.0, it.bestSeconds / 60, it.bestSeconds % 60)
+                }
+            }.joinToString("\n")
+        }
+
+        // Cache miss: full scan, then warm the cache so future opens are O(1)
         val best = mutableMapOf<Double, PersonalRecord>()
         val runs = db.runDao().observeAllRuns().first()
         for (run in runs) {
@@ -160,6 +172,13 @@ class StatisticsActivity : AppCompatActivity() {
                 }
             }
         }
+        best.forEach { (target, pr) ->
+            db.personalRecordCacheDao().upsert(
+                dev.schrammel.personal_running_tracker.data.PersonalRecordCache(
+                    distanceMeters = target, bestSeconds = pr.bestSeconds,
+                    runId = pr.runId, updatedAt = System.currentTimeMillis())
+            )
+        }
         if (best.isEmpty()) return "No GPS data yet"
         return targets.mapNotNull { t ->
             best[t]?.let { "%5.1f km  %d:%02d".format(t / 1000.0, it.bestSeconds / 60, it.bestSeconds % 60) }
@@ -169,8 +188,8 @@ class StatisticsActivity : AppCompatActivity() {
     private fun formatTotals(t: Totals): String {
         val prefs = dev.schrammel.personal_running_tracker.settings.TrackingPreferences(this)
         val units = dev.schrammel.personal_running_tracker.domain.units.Units
-        fun hms(s: Long) = "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
         fun dist(m: Double) = "%.2f %s".format(units.distance(m, prefs.distanceUnit), units.distanceLabel(prefs.distanceUnit))
+        fun hms(s: Long) = units.durationText(s)
         return buildString {
             append("Runs:            %d\n".format(t.runCount))
             append("Distance:        %s\n".format(dist(t.totalDistanceMeters)))
