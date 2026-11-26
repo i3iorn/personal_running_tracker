@@ -50,6 +50,7 @@ class TrackingService : Service() {
     private var lastLat: Double? = null
     private var lastLng: Double? = null
     private var currentDistanceMeters: Double = 0.0
+    private var trackingProfile: String = "Balanced"
 
     override fun onCreate() {
         super.onCreate()
@@ -93,7 +94,7 @@ class TrackingService : Service() {
             segmentStartMs = System.currentTimeMillis()
         }
         startForegroundIfNeeded()
-        startLocationUpdates()
+        startLocationUpdates(trackingProfile)
     }
 
     private fun startForegroundIfNeeded() {
@@ -110,19 +111,26 @@ class TrackingService : Service() {
         )
     }
 
-    private fun startLocationUpdates() {
+    private fun startLocationUpdates(profile: String) {
         if (locationListener != null) return
         val listener = LocationListener { location: Location ->
             location?.let { onLocationChanged(it) }
         }
         locationListener = listener
+        val (minTimeMs, minDistanceMeters) = locationRequestParams(profile)
         locationManager.requestLocationUpdates(
-            TimeUnit.MILLISECONDS.toMillis(30000L),
-            30f,
+            minTimeMs,
+            minDistanceMeters,
             CriteriaProvider(),
             listener,
             android.os.Looper.getMainLooper()
         )
+    }
+
+    private fun locationRequestParams(profile: String): Pair<Long, Float> = when (profile) {
+        "Saver" -> Pair(TimeUnit.MINUTES.toMillis(1L), 100f)
+        "High Accuracy" -> Pair(TimeUnit.SECONDS.toMillis(5L), 10f)
+        else -> Pair(TimeUnit.SECONDS.toMillis(30L), 30f)
     }
 
     private fun stopLocationUpdates() {
@@ -194,7 +202,7 @@ class TrackingService : Service() {
         if (!isRunning || !isPaused) return
         isPaused = false
         segmentStartMs = System.currentTimeMillis()
-        startLocationUpdates()
+        startLocationUpdates(trackingProfile)
     }
 
     private fun finishRun() {
@@ -224,7 +232,7 @@ class TrackingService : Service() {
                         elevationGainMeters = 0.0,
                         elevationLossMeters = 0.0,
                         stepCount = 0L,
-                        trackingProfile = "Balanced",
+                        trackingProfile = trackingProfile,
                         trackingAlgorithmVersion = "1.0.0",
                         userAdjusted = false,
                         notes = "",
