@@ -57,6 +57,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private var batteryStartPct: Int? = null
     private var gpsFixCount: Int = 0
     private var sensorFixCount: Int = 0
+    private var maxAccuracyMetersSeen: Float = 0f
+    @Volatile private var lastFinishedRunId: Long = 0L
 
     // Public API for MainActivity to query live state
     fun isRunningFlag(): Boolean = isRunning
@@ -112,6 +114,9 @@ class TrackingService : Service(), SensorAdapter.Callback {
             lastLng = null
             runId = System.currentTimeMillis()
             batteryStartPct = getBatteryLevel()
+            gpsFixCount = 0
+            sensorFixCount = 0
+            maxAccuracyMetersSeen = 0f
         } else if (isPaused) {
             isPaused = false
             segmentStartMs = System.currentTimeMillis()
@@ -122,16 +127,16 @@ class TrackingService : Service(), SensorAdapter.Callback {
     }
 
     private fun getBatteryLevel(): Int? {
-        // Production: read via BatteryManager or PowerProfile.
-        // Returns null if unavailable; feature gracefully degrades.
-        return null
+        val bm = getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+        val level = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        return if (level in 1..100) level else null
     }
 
     private fun startForegroundIfNeeded() {
         val notification = NotificationCompat.Builder(this, "tracking_service_channel")
             .setContentTitle("Personal Running Tracker")
             .setContentText("Tracking")
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setSmallIcon(dev.schrammel.personal_running_tracker.R.drawable.ic_runner)
             .build()
         ServiceCompat.startForeground(
             this,
@@ -212,6 +217,8 @@ class TrackingService : Service(), SensorAdapter.Callback {
         if (prevLat != null && prevLng != null) {
             currentDistanceMeters += haversineMeters(prevLat, prevLng, lat, lng)
         }
+        val accuracy = location.accuracy.coerceAtLeast(0f)
+        if (accuracy > maxAccuracyMetersSeen) maxAccuracyMetersSeen = accuracy
         lastLat = lat
         lastLng = lng
 
@@ -303,9 +310,19 @@ class TrackingService : Service(), SensorAdapter.Callback {
                 recordDiagnostics(runId, elapsedMs, distance)
             }
         }
+        lastFinishedRunId = runId
         stopForeground(0)
         stopSelf()
     }
+
+    /** Fetched by MainActivity after finish to show the run summary. */
+    suspend fun fetchLastRunSummary(): RunEntity? =
+        lastFinishedRunId.takeIf { it > 0L }?.let { database.runDao().getRunById(it) }
+
+    suspend fun fetchLastRunDiagnostic(): RunDiagnostic? =
+        lastFinishedRunId.takeIf { it > 0L }?.let {
+            database.runDiagnosticDao().getDiagnosticByRunId(it)
+        }
 
     private suspend fun recordDiagnostics(runId: Long, durationMs: Long, fusedDistanceMeters: Double) {
         val batteryStart = batteryStartPct
@@ -318,8 +335,15 @@ class TrackingService : Service(), SensorAdapter.Callback {
         val gpsCount = gpsFixCount
         val sensorCount = sensorFixCount
         val fusedVsGpsDelta = fusedDistanceMeters
-        val maxAccuracy = 0f // TODO: track worst-case across fixes
-        val accuracyRating = 3 // placeholder rating
+        val maxAccuracy = if (gpsFixCount > 0) maxAccuracyMetersSeen else 0f
+        val accuracyRating = when {
+            gpsFixCount == 0 -> null
+            maxAccuracy <= 5f -> 5
+            maxAccuracy <= 10f -> 4
+            maxAccuracy <= 20f -> 3
+            maxAccuracy <= 50f -> 2
+            else -> 1
+        }
 
         val diagnostic = RunDiagnostic(
             runId = runId,

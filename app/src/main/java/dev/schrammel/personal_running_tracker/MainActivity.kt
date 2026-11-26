@@ -99,6 +99,7 @@ class MainActivity : ComponentActivity() {
         binding.startButton.setOnClickListener { startRun() }
         binding.pauseButton.setOnClickListener { pauseRun() }
         binding.finishButton.setOnClickListener { finishRun() }
+        binding.discardButton.setOnClickListener { discardRun() }
         binding.profileButton.setOnClickListener { cycleTrackingProfile() }
         binding.exportButton.setOnClickListener { exportData() }
         binding.runHistoryList.setOnItemClickListener { _, _, position, _ ->
@@ -191,5 +192,71 @@ class MainActivity : ComponentActivity() {
             action = TrackingService.ACTION_FINISH_RUN
         })
         binding.statusText.text = "Run finished"
+        lifecycleScope.launch {
+            // The service writes the run + diagnostics asynchronously; retry briefly.
+            var summary: dev.schrammel.personal_running_tracker.data.RunEntity? = null
+            var diag: dev.schrammel.personal_running_tracker.data.RunDiagnostic? = null
+            repeat(5) {
+                kotlinx.coroutines.delay(500)
+                val svc = trackingService ?: return@repeat
+                summary = svc.fetchLastRunSummary()
+                diag = svc.fetchLastRunDiagnostic()
+                if (summary != null) return@launch
+            }
+            summary?.let { showRunSummary(it, diag) }
+        }
+    }
+
+    private fun discardRun() {
+        startService(Intent(this, TrackingService::class.java).apply {
+            action = TrackingService.ACTION_DISCARD_RUN
+        })
+        binding.statusText.text = "Run discarded"
+        binding.elapsedText.text = "--:--"
+        binding.distanceText.text = "0.0 km"
+        binding.paceText.text = "--:-- /km"
+        binding.speedText.text = "0.0 km/h"
+        binding.accuracyText.text = "-- m"
+    }
+
+    private fun showRunSummary(
+        run: dev.schrammel.personal_running_tracker.data.RunEntity,
+        diag: dev.schrammel.personal_running_tracker.data.RunDiagnostic?,
+    ) {
+        val km = run.distanceMeters / 1000.0
+        val paceMinPerKm = if (km > 0) run.averagePaceSecondsPerMeter * 1000.0 / 60.0 else 0.0
+        val text = buildString {
+            append("Distance: %.2f km\n".format(km))
+            append("Duration: %d:%02d:%02d\n".format(
+                run.elapsedDurationSeconds / 3600,
+                (run.elapsedDurationSeconds % 3600) / 60,
+                run.elapsedDurationSeconds % 60))
+            append("Moving: %d:%02d:%02d\n".format(
+                run.movingDurationSeconds / 3600,
+                (run.movingDurationSeconds % 3600) / 60,
+                run.movingDurationSeconds % 60))
+            append("Paused: %d:%02d:%02d\n".format(
+                run.pausedDurationSeconds / 3600,
+                (run.pausedDurationSeconds % 3600) / 60,
+                run.pausedDurationSeconds % 60))
+            append("Avg pace: %d:%02d /km\n".format(paceMinPerKm.toInt(), ((paceMinPerKm % 1) * 60).toInt()))
+            append("Avg speed: %.1f km/h\n".format(run.averageSpeedMetersPerSecond * 3.6))
+            append("Steps: %d\n".format(run.stepCount))
+            if (diag != null) {
+                append("\nBattery: %s%% used (start %s%%, end %s%%)\n".format(
+                    diag.batteryConsumedPercent.toString(),
+                    diag.batteryStartPercent?.toString() ?: "?",
+                    diag.batteryEndPercent?.toString() ?: "?"))
+                append("GPS fixes: %d, sensor samples: %d\n".format(diag.gpsFixCount, diag.sensorFixCount))
+                append("Max GPS error: %.0f m (rating %s/5)".format(
+                    diag.maxAccuracyMeters ?: 0f,
+                    diag.accuracyRating?.toString() ?: "?"))
+            }
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Run Summary")
+            .setMessage(text)
+            .setPositiveButton("Save", null)
+            .show()
     }
 }
