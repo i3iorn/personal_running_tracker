@@ -4,6 +4,8 @@ plugins {
     id("com.android.application") version "9.5.0"
     id("com.google.devtools.ksp") version "2.3.12"
     // CVE scan of the dependency tree: gradle dependencyCheckAnalyze
+    // NOTE: run with --no-configuration-cache — the OWASP plugin uses
+    // Task.project at execution time, which the configuration cache forbids.
     id("org.owasp.dependencycheck") version "12.1.0"
 }
 
@@ -13,6 +15,16 @@ dependencyCheck {
         assemblyEnabled = false
     }
     failBuildOnCVSS = 9.0f
+    // NVD's API intermittently returns HTTP 524 during the (huge) initial
+    // database sync, especially without an API key. Don't fail the whole task
+    // on update errors; the analysis runs on cached/partial data and the next
+    // run completes the sync. Retry weekly — the DB caches locally.
+    failOnError = false
+    // Free key from https://nvd.nist.gov/developers/request-an-api-key
+    // Set via environment; never hardcode it.
+    nvd {
+        apiKey = System.getenv("NVD_API_KEY") ?: ""
+    }
 }
 
 android {
