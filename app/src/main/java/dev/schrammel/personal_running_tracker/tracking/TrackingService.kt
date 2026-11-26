@@ -89,6 +89,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
 
     // Public API for MainActivity to query live state
     fun isRunningFlag(): Boolean = isRunning
+    fun isPausedFlag(): Boolean = isPaused
     fun currentElapsedMs(): Long = accumElapsedMs + (if (isPaused) 0L else System.currentTimeMillis() - segmentStartMs)
     fun currentDistanceMeters(): Double = currentDistanceMeters
     fun currentAccuracyMeters(): Float? = lastAccuracyMeters

@@ -48,57 +48,86 @@ class MainActivity : ComponentActivity() {
     private val uiTicker = object : Runnable {
         override fun run() {
             val svc = trackingService
+            updateControlBar(svc)
             if (svc != null && svc.isRunningFlag()) {
-                val prefs = TrackingPreferences(this@MainActivity)
-                val units = dev.schrammel.personal_running_tracker.domain.units.Units
-                // Screen-on preference only applies while a run is active
-                binding.root.keepScreenOn = prefs.screenOnEnabled
-                val elapsed = svc.currentElapsedMs()
-                binding.elapsedText.text = formatElapsed(elapsed)
-                val distanceText = String.format(
-                    "%.2f %s", units.distance(svc.currentDistanceMeters(), prefs.distanceUnit),
-                    units.distanceLabel(prefs.distanceUnit))
-                binding.distanceText.text = distanceText
-                val accuracy = svc.currentAccuracyMeters()
-                val speed = svc.currentSmoothedSpeedMps()
-                // Confidence gate: hide instantaneous pace when GPS quality is poor
-                if (speed != null && accuracy != null && accuracy <= prefs.paceMaxAccuracyMeters) {
-                    val secPerMeter = 1.0 / speed
-                    binding.paceText.text = units.paceText(secPerMeter, prefs.paceUnit) + units.paceLabel(prefs.paceUnit)
-                    binding.speedText.text = String.format("%.1f %s",
-                        units.speed(speed, prefs.distanceUnit), units.speedLabel(prefs.distanceUnit))
-                } else {
-                    binding.paceText.text = "--:--" + units.paceLabel(prefs.paceUnit)
-                    binding.speedText.text = String.format("%.1f %s",
-                        units.speed(speed ?: 0.0, prefs.distanceUnit), units.speedLabel(prefs.distanceUnit))
-                }
-                binding.accuracyText.text = if (accuracy != null) "± %.0f m".format(accuracy) else "± -- m"
-                // Ultra mode (ultra #1): hide secondary metrics while running
-                val ultra = prefs.ultraModeEnabled
-                binding.labelPace.visibility = if (ultra) View.GONE else View.VISIBLE
-                binding.labelSpeed.visibility = if (ultra) View.GONE else View.VISIBLE
-                binding.labelDistance.visibility = if (ultra) View.GONE else View.VISIBLE
-                binding.paceText.visibility = if (ultra) View.GONE else View.VISIBLE
-                binding.speedText.visibility = if (ultra) View.GONE else View.VISIBLE
-                binding.accuracyText.visibility = if (ultra) View.GONE else View.VISIBLE
-                // Movement state + live battery drain rate (ultra #2, #5)
-                val state = svc.currentMovementState()
-                val rate = svc.batteryRatePerHour()
-                binding.statusText.text = buildString {
-                    append("Tracking")
-                    state?.let { append(" • $it") }
-                    rate?.let { append(" • −$it%/h") }
-                }
+                updateRunMetrics(svc)
             } else {
-                binding.labelPace.visibility = View.VISIBLE
-                binding.labelSpeed.visibility = View.VISIBLE
-                binding.labelDistance.visibility = View.VISIBLE
-                binding.paceText.visibility = View.VISIBLE
-                binding.speedText.visibility = View.VISIBLE
-                binding.accuracyText.visibility = View.VISIBLE
+                restoreIdleMetrics()
             }
             uiHandler.postDelayed(this, 1000L)
         }
+    }
+
+    /** Contextual bottom bar (Strava/NRC style): idle shows only the big Start;
+     *  running shows Pause/Mark/Discard/Finish; paused swaps Pause→Resume and
+     *  hides the config grid. */
+    private fun updateControlBar(svc: TrackingService?) {
+        val running = svc?.isRunningFlag() == true
+        val paused = svc?.isPausedFlag() == true
+        val prefs = TrackingPreferences(this@MainActivity)
+        binding.root.keepScreenOn = running && prefs.screenOnEnabled
+        binding.startButton.visibility = if (running) View.GONE else View.VISIBLE
+        binding.pauseButton.visibility = if (running) View.VISIBLE else View.GONE
+        binding.pauseButton.text = if (paused) "Resume" else "Pause"
+        binding.markButton.visibility = if (running && !paused) View.VISIBLE else View.GONE
+        binding.discardButton.visibility = if (running) View.VISIBLE else View.GONE
+        binding.finishButton.visibility = if (running) View.VISIBLE else View.GONE
+        // Config surfaces are idle-only (declutter while running)
+        val configVisible = if (running) View.GONE else View.VISIBLE
+        binding.profileRow.visibility = configVisible
+        binding.dataRow.visibility = configVisible
+        binding.exportButton.visibility = configVisible
+        binding.profileText.visibility = configVisible
+        binding.statsButton.visibility = configVisible
+    }
+
+    private fun updateRunMetrics(svc: TrackingService) {
+        val prefs = TrackingPreferences(this@MainActivity)
+        val units = dev.schrammel.personal_running_tracker.domain.units.Units
+        val elapsed = svc.currentElapsedMs()
+        binding.elapsedText.text = formatElapsed(elapsed)
+        binding.distanceText.text = String.format(
+            "%.2f %s", units.distance(svc.currentDistanceMeters(), prefs.distanceUnit),
+            units.distanceLabel(prefs.distanceUnit))
+        val accuracy = svc.currentAccuracyMeters()
+        val speed = svc.currentSmoothedSpeedMps()
+        // Confidence gate: hide instantaneous pace when GPS quality is poor
+        if (speed != null && accuracy != null && accuracy <= prefs.paceMaxAccuracyMeters) {
+            val secPerMeter = 1.0 / speed
+            binding.paceText.text = units.paceText(secPerMeter, prefs.paceUnit) + units.paceLabel(prefs.paceUnit)
+            binding.speedText.text = String.format("%.1f %s",
+                units.speed(speed, prefs.distanceUnit), units.speedLabel(prefs.distanceUnit))
+        } else {
+            binding.paceText.text = "--:--" + units.paceLabel(prefs.paceUnit)
+            binding.speedText.text = String.format("%.1f %s",
+                units.speed(speed ?: 0.0, prefs.distanceUnit), units.speedLabel(prefs.distanceUnit))
+        }
+        binding.accuracyText.text = if (accuracy != null) "± %.0f m".format(accuracy) else "± -- m"
+        // Ultra mode (ultra #1): hide secondary metrics while running
+        val ultra = prefs.ultraModeEnabled
+        binding.labelPace.visibility = if (ultra) View.GONE else View.VISIBLE
+        binding.labelSpeed.visibility = if (ultra) View.GONE else View.VISIBLE
+        binding.labelDistance.visibility = if (ultra) View.GONE else View.VISIBLE
+        binding.paceText.visibility = if (ultra) View.GONE else View.VISIBLE
+        binding.speedText.visibility = if (ultra) View.GONE else View.VISIBLE
+        binding.accuracyText.visibility = if (ultra) View.GONE else View.VISIBLE
+        // Movement state + live battery drain rate (ultra #2, #5)
+        val state = svc.currentMovementState()
+        val rate = svc.batteryRatePerHour()
+        binding.statusText.text = buildString {
+            append("Tracking")
+            state?.let { append(" • $it") }
+            rate?.let { append(" • −$it%/h") }
+        }
+    }
+
+    private fun restoreIdleMetrics() {
+        binding.labelPace.visibility = View.VISIBLE
+        binding.labelSpeed.visibility = View.VISIBLE
+        binding.labelDistance.visibility = View.VISIBLE
+        binding.paceText.visibility = View.VISIBLE
+        binding.speedText.visibility = View.VISIBLE
+        binding.accuracyText.visibility = View.VISIBLE
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -351,6 +380,12 @@ class MainActivity : ComponentActivity() {
             filterDays == null ||
                 run.startTimestamp >= System.currentTimeMillis() - filterDays!! * 86_400_000L
         }
+        // Empty state (Strava-style): guide a first-time user or explain the filter
+        binding.emptyHistoryText.visibility =
+            if (displayedRuns.isEmpty()) View.VISIBLE else View.GONE
+        binding.emptyHistoryText.text = if (allRunsCache.isEmpty())
+            "No runs yet — hit Start Run to record your first one."
+        else "No runs in this period."
         val fmt = java.text.SimpleDateFormat("MMM d HH:mm", java.util.Locale.US)
         historyAdapter.setRows(displayedRuns.map { run ->
             val name = run.notes.lineSequence().firstOrNull { it.isNotBlank() }?.take(30)
@@ -434,10 +469,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun pauseRun() {
-        startService(Intent(this, TrackingService::class.java).apply {
-            action = TrackingService.ACTION_PAUSE_RUN
-        })
-        binding.statusText.text = "Paused"
+        val svc = trackingService
+        val action = if (svc?.isPausedFlag() == true) TrackingService.ACTION_RESUME_RUN
+        else TrackingService.ACTION_PAUSE_RUN
+        startService(Intent(this, TrackingService::class.java).apply { this.action = action })
+        binding.statusText.text = if (action == TrackingService.ACTION_RESUME_RUN) "Resumed" else "Paused"
     }
 
     private fun finishRun() {
@@ -507,7 +543,7 @@ class MainActivity : ComponentActivity() {
         val prefs = TrackingPreferences(this)
         val units = dev.schrammel.personal_running_tracker.domain.units.Units
         val name = run.notes.lineSequence().firstOrNull { it.isNotBlank() }?.take(40) ?: "Run Summary"
-        val text = buildString {
+        val metricsText = buildString {
             append("Distance: %.2f %s\n".format(
                 units.distance(run.distanceMeters, prefs.distanceUnit),
                 units.distanceLabel(prefs.distanceUnit)))
@@ -542,10 +578,38 @@ class MainActivity : ComponentActivity() {
                     diag.accuracyRating?.toString() ?: "?"))
             }
         }
+        // Strava-style save sheet: metrics + editable run name
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(56, 24, 56, 0)
+        }
+        container.addView(TextView(this@MainActivity).apply {
+            text = metricsText
+            textSize = 14f
+            setPadding(0, 0, 0, 16)
+        })
+        val defaultName = java.text.SimpleDateFormat("EEE MMM d", java.util.Locale.US)
+            .format(java.util.Date(run.startTimestamp)) + " run"
+        val nameInput = android.widget.EditText(this@MainActivity).apply {
+            hint = "Run name"
+            setText(defaultName)
+            setSelection(defaultName.length)
+        }
+        container.addView(nameInput)
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(name)
-            .setMessage(text)
-            .setPositiveButton("Save", null)
+            .setTitle("Save run")
+            .setView(container)
+            .setPositiveButton("Save") { _, _ ->
+                // Name-your-run flow (Strava-style): the name becomes the run's
+                // title in the history list; originals are untouched.
+                val typed = nameInput.text.toString().trim()
+                if (typed.isNotEmpty()) {
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        repository.updateRun(run.copy(notes = typed, modifiedAt = System.currentTimeMillis()))
+                    }
+                }
+            }
+            .setNegativeButton("Close", null)
             .show()
     }
 }
