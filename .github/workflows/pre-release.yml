@@ -40,23 +40,41 @@ jobs:
       - name: Run unit tests
         run: ./gradlew --console=plain :app:testDebugUnitTest
 
-      - name: Build debug APK
+      - name: Set up keystore for release signing
+        if: github.event_name == 'push'
+        run: |
+          echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > release.keystore
+          chmod 600 release.keystore
+          echo "RELEASE_KEYSTORE_FILE=release.keystore" >> $GITHUB_ENV
+          echo "RELEASE_KEYSTORE_PASSWORD=${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+          echo "RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> $GITHUB_ENV
+          echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> $GITHUB_ENV
+
+      - name: Build release APK
+        if: github.event_name == 'push'
+        run: ./gradlew --console=plain :app:assembleRelease
+
+      - name: Build debug APK (PR check only)
+        if: github.event_name != 'push'
         run: ./gradlew --console=plain :app:assembleDebug
 
-      - name: Verify debug APK exists
+      - name: Verify APK exists
         run: |
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            APK="app/build/outputs/apk/release/app-release.apk"
+          else
+            APK="app/build/outputs/apk/debug/app-debug.apk"
+          fi
           if [ ! -f "$APK" ]; then
-            echo "::error::Debug APK was not produced at $APK"
+            echo "::error::APK was not produced at $APK"
             exit 1
           fi
-          echo "Debug APK: $APK"
+          echo "APK: $APK"
           ls -lh "$APK"
 
       - name: Extract app version from build.gradle.kts
         id: version
         run: |
-          # Parse versionName from build.gradle.kts (e.g. versionName = "0.1.0")
           VERSION=$(grep 'versionName' app/build.gradle.kts | sed -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/' | tr -d '[:space:]')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -81,7 +99,7 @@ jobs:
         with:
           tag_name: ${{ env.TAG }}
           name: Pre-Release ${{ env.TAG }}
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: app/build/outputs/apk/release/app-release.apk
           generate_release_notes: true
           draft: true
           prerelease: true

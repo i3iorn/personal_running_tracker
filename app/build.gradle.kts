@@ -3,6 +3,8 @@ plugins {
     id("com.google.devtools.ksp") version "2.3.12"
 }
 
+import java.io.File
+
 android {
     namespace = "dev.schrammel.personal_running_tracker"
     compileSdk = 37
@@ -17,9 +19,19 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = File(System.getenv("RELEASE_KEYSTORE_FILE") ?: "release.keystore")
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "personal_running_tracker"
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "do-not-leak"
+            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: "do-not-leak"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
