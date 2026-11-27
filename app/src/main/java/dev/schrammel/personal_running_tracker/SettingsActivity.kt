@@ -189,7 +189,7 @@ class SettingsActivity : AppCompatActivity() {
             "Amber band boundary; worse errors draw red.")
 
         section("About")
-        label("Personal Running Tracker v0.1.0\nOffline-first, sensor-assisted GPS tracking.\nAll data stays on this device.")
+        label("Personal Running Tracker v0.2.0\nOffline-first, sensor-assisted GPS tracking.\nAll data stays on this device.")
     }
 
     // ---- builder helpers ----

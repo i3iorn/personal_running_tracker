@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="dev.schrammel.personal_running_tracker">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- No internet permission: the app is fully offline-capable. -->
     <!-- Location permission is requested at runtime in Phase 2. -->
@@ -32,7 +31,7 @@
         <activity android:name=".StatisticsActivity" android:exported="false" />
         <activity android:name=".SettingsActivity" android:exported="false" />
 
-        <!-- Foreground service declared here; implemented in Phase 2. -->
+        <!-- Foreground service (location) used for all recording. -->
         <service android:name=".tracking.TrackingService" android:exported="false"
                 android:foregroundServiceType="location" />
 
