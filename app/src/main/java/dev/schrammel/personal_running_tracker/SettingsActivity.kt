@@ -73,6 +73,10 @@ class SettingsActivity : AppCompatActivity() {
             "When the battery drops to this level during a run, the profile automatically " +
                 "switches to Battery Saver and a notification tells you.")
 
+        slider("Run/walk top speed threshold (km/h, pause above)", 15.0, 40.0, 5.0, { prefs.runSpeedPauseThresholdKmh.toDouble() },
+                { prefs.runSpeedPauseThresholdKmh = it.toFloat() }, "km/h", 30.0,
+                "Runs beyond this speed are auto-paused — a human cannot run faster than this.")
+
         section("GPS scheduling (expert — bad values kill battery or accuracy)")
         slider("Battery Saver: GPS min interval", 1.0, 120.0, 1.0, { prefs.saverGpsMinIntervalMs / 1000.0 },
             { prefs.saverGpsMinIntervalMs = (it * 1000).toLong() }, "s", 60.0,
@@ -190,7 +194,7 @@ class SettingsActivity : AppCompatActivity() {
             "Amber band boundary; worse errors draw red.")
 
         section("About")
-        label("Personal Running Tracker v0.2.1\nOffline-first, sensor-assisted GPS tracking.\nAll data stays on this device.")
+        label("Personal Running Tracker v0.2.2\nOffline-first, sensor-assisted GPS tracking.\nAll data stays on this device.")
     }
 
     // ---- builder helpers ----

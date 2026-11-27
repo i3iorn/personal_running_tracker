@@ -490,9 +490,10 @@ class TrackingService : Service(), SensorAdapter.Callback {
         // time (spec §10). Run vs walk is classified separately for ultra efforts.
         // Steps are a reliable movement signal even when GPS looks stationary indoors.
         val stationaryThresholdMps = 0.2 + prefs.autoPauseSensitivity * 0.03
+        val topSpeedPauseMps = prefs.runSpeedPauseThresholdKmh.toDouble() / 3.6
         val stepsGrew = stepCount > lastStepCountAtLastFix
         lastStepCountAtLastFix = stepCount
-        val moving = !isPaused && gapMs > 0 &&
+        val moving = !isPaused && gapMs > 0 && effectiveSpeed <= topSpeedPauseMps &&
             (!prefs.autoPauseEnabled || effectiveSpeed >= stationaryThresholdMps || stepsGrew)
         if (moving) {
             if (effectiveSpeed >= prefs.runningSpeedThresholdMps) runSegmentMs += gapMs

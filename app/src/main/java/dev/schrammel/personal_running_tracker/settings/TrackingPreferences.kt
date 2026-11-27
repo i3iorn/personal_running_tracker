@@ -121,6 +121,11 @@ class TrackingPreferences(context: Context) {
         get() = prefs.getFloat("running_speed_threshold_mps", 2.2f).coerceIn(0.5f, 6f)
         set(value) { prefs.edit().putFloat("running_speed_threshold_mps", value).apply() }
 
+    /** Top speed (km/h) above which a run is auto-paused — a human cannot run faster. */
+    var runSpeedPauseThresholdKmh: Float
+        get() = prefs.getFloat("run_speed_pause_threshold_kmh", 30f).coerceIn(15f, 40f)
+        set(value) { prefs.edit().putFloat("run_speed_pause_threshold_kmh", value).apply() }
+
     // ----- Validated getters: every expert setting is clamped at this single
     // choke point so a bad value in Settings cannot break the engine. -----
     var saverGpsMinIntervalMs: Long

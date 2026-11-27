@@ -82,4 +82,13 @@ class TrackingPreferencesTest {
         prefs.autoPauseEnabled = false
         assertEquals(false, prefs.autoPauseEnabled)
     }
+
+    @Test
+    fun testRunSpeedPauseThresholdKmhClampsToRange() {
+        assertEquals(30f, prefs.runSpeedPauseThresholdKmh, 0.01f)
+        prefs.runSpeedPauseThresholdKmh = 10f   // below floor
+        assertEquals(15f, prefs.runSpeedPauseThresholdKmh, 0.01f)
+        prefs.runSpeedPauseThresholdKmh = 100f  // above ceiling
+        assertEquals(40f, prefs.runSpeedPauseThresholdKmh, 0.01f)
+    }
 }
