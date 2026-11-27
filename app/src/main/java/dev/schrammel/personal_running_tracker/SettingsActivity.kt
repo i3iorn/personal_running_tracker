@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.switchmaterial.SwitchMaterial
 import dev.schrammel.personal_running_tracker.settings.TrackingPreferences
+import java.util.Locale
 
 /**
  * Comprehensive settings page: every value that used to be hardcoded in code is
@@ -281,7 +282,7 @@ class SettingsActivity : AppCompatActivity() {
             setPadding(0, 14, 0, 2)
         }
         val hintView = TextView(this).apply {
-            text = "range %.4g–%.4g %s · default %.4g %s".format(minVal, maxVal, unit, defaultValue, unit)
+            text = java.lang.String.format(java.util.Locale.US, "range %.4g–%.4g %s · default %.4g %s", minVal, maxVal, unit, defaultValue, unit)
             textSize = 12f
             setTextColor(resources.getColor(R.color.rt_on_surface_variant, theme))
         }
@@ -318,11 +319,11 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun Double.snap(): Double {
         val decimals = if (this < 1.0) 2 else if (this == this.toLong().toDouble()) 0 else 1
-        return "%.${decimals}f".format(this).toDouble()
+        return java.lang.String.format(java.util.Locale.US, "%.${decimals}f", this).toDouble()
     }
 
     private fun formatValue(value: Double, step: Double): String {
         val decimals = if (step < 0.1) 2 else if (step == step.toLong().toDouble()) 0 else 1
-        return "%.${decimals}f".format(value)
+        return java.lang.String.format(java.util.Locale.US, "%.${decimals}f", value)
     }
 }
