@@ -60,7 +60,6 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private var runId: Long = 0L
     private var lastLat: Double? = null
     private var lastLng: Double? = null
-    private var currentDistanceMeters: Double = 0.0
     private var trackingProfile: String = "Balanced"
     private var stepCount: Long = 0L
     private var batteryStartPct: Int? = null
@@ -86,24 +85,30 @@ class TrackingService : Service(), SensorAdapter.Callback {
     private var walkSegmentMs: Long = 0L
     private val recentSpeeds = ArrayDeque<Pair<Long, Float>>() // (timeMs, speedMps)
     @Volatile private var lastFinishedRunId: Long = 0L
+    // Step history for live speed/movement between GPS fixes (indoor walking fix)
+    private val stepHistory = ArrayDeque<Pair<Long, Long>>() // (timeMs, cumulativeTotalSteps)
+    private var lastStepCountAtLastFix: Long = 0L
 
     // Public API for MainActivity to query live state
     fun isRunningFlag(): Boolean = isRunning
     fun isPausedFlag(): Boolean = isPaused
     fun currentElapsedMs(): Long = accumElapsedMs + (if (isPaused) 0L else System.currentTimeMillis() - segmentStartMs)
-    fun currentDistanceMeters(): Double = currentDistanceMeters
+    fun currentDistanceMeters(): Double = baseDistanceMeters + (fusion?.totalDistanceMeters ?: 0.0)
     fun currentAccuracyMeters(): Float? = lastAccuracyMeters
 
-    /** Current movement state for the live display: "RUN", "WALK" or null (unknown/stationary). */
+    /** Live movement state for the live display: "RUN", "WALK" or null (unknown/stationary). */
     fun currentMovementState(): String? = when {
         isPaused -> "PAUSED"
         !isRunning -> null
         else -> {
-            val speed = currentSmoothedSpeedMps()
+            val info = currentSpeedInfo()
+            val speed = info.first
+            val fromGps = info.second
+            if (speed == null) return null
+            val stepsGrew = stepCount > lastStepCountAtLastFix
             when {
-                speed == null -> null
                 speed >= prefs.runningSpeedThresholdMps -> "RUN"
-                else -> "WALK"
+                else -> if (stepsGrew) "WALK" else "STATIONARY"
             }
         }
     }
@@ -120,9 +125,21 @@ class TrackingService : Service(), SensorAdapter.Callback {
         return (((start - now) / elapsedH)).toInt()
     }
 
-    /** Smoothed current speed (m/s). The effective window scales up to cover the
-     * configured GPS fix interval so the buffer never sits empty between fixes. */
-    fun currentSmoothedSpeedMps(): Double? {
+    /** Smoothed current speed (m/s). Falls back to a step-derived estimate so
+     * walking is visible live between GPS fixes and indoors where GPS is poor.
+     * The second value reports whether the figure came from GPS (true) or the
+     * step sensor (false), so the UI can skip the accuracy gate for sensors. */
+    fun currentSpeedInfo(): Pair<Double?, Boolean> {
+        val gps = smoothedGpsSpeedMps()
+        if (gps != null) return gps to true
+        val step = stepSpeedMps()
+        return step to false
+    }
+
+    /** Back-compat convenience wrapper. */
+    fun currentSmoothedSpeedMps(): Double? = currentSpeedInfo().first
+
+    private fun smoothedGpsSpeedMps(): Double? {
         val effWindow = maxOf(prefs.paceSmoothingWindowMs, 3 * lastFixGapMs + 1_000L)
         val minSpeed = prefs.paceMinSpeedMps.toDouble()
         val cutoff = System.currentTimeMillis() - effWindow
@@ -131,6 +148,23 @@ class TrackingService : Service(), SensorAdapter.Callback {
         if (recentSpeeds.isEmpty()) return null
         val mean = recentSpeeds.map { it.second }.average()
         return if (mean >= minSpeed) mean else null
+    }
+
+    /** Walking/running speed estimated from recent step cadence × stride length.
+     * Returns null when there is not enough recent step activity. */
+    private fun stepSpeedMps(): Double? {
+        val now = System.currentTimeMillis()
+        val cutoff = now - 6_000L
+        while (stepHistory.isNotEmpty() && stepHistory.first().first < cutoff) stepHistory.removeFirst()
+        if (stepHistory.size < 2) return null
+        val entries = stepHistory.toList()
+        val first = entries[0]
+        val last = entries[entries.size - 1]
+        val dtSec = (last.first - first.first) / 1000.0
+        if (dtSec <= 0.5) return null
+        val stepsPerSec = (last.second - first.second) / dtSec
+        if (stepsPerSec <= 0.1) return null
+        return stepsPerSec * prefs.tuningStrideLengthMeters
     }
 
     inner class LocalBinder : android.os.Binder() {
@@ -205,7 +239,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         accumElapsedMs = state.accumElapsedMs
         accumMovingMs = state.accumMovingMs
         segmentStartMs = System.currentTimeMillis()
-        currentDistanceMeters = state.distanceMeters
+        baseDistanceMeters = state.distanceMeters
         stepCount = state.stepCount
         trackingProfile = state.trackingProfile
         batteryStartPct = state.batteryStartPct
@@ -231,7 +265,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
             RunStateEntity(
                 runId = runId, isRunning = isRunning, isPaused = isPaused,
                 accumElapsedMs = accumElapsedMs, accumMovingMs = accumMovingMs,
-                segmentStartMs = segmentStartMs, distanceMeters = currentDistanceMeters,
+                segmentStartMs = segmentStartMs, distanceMeters = currentDistanceMeters(),
                 stepCount = stepCount, trackingProfile = trackingProfile,
                 batteryStartPct = batteryStartPct,
             )
@@ -277,17 +311,17 @@ class TrackingService : Service(), SensorAdapter.Callback {
             walkSegmentMs = 0L
             markerCount = 0
             segmentStartMs = System.currentTimeMillis()
-            currentDistanceMeters = 0.0
             lastLat = null
             lastLng = null
             runId = System.currentTimeMillis()
+            baseDistanceMeters = 0.0
+            rawGpsDistanceMeters = 0.0
+            lastStepCountAtLastFix = stepCount
             // Fresh fusion instance per run: GPS anchors reconcile with sensor estimates
             fusion = SensorFusion(
                 maxGpsSegmentRatio = prefs.tuningSensorFusionMaxGpsSegmentRatio,
                 uncertaintyPerStepMeters = 5.0,
             )
-            baseDistanceMeters = 0.0
-            rawGpsDistanceMeters = 0.0
             // Battery reads are binder calls; keep them off the UI/caller thread.
             serviceScope.launch { batteryStartPct = getBatteryLevel() }
             gpsFixCount = 0
@@ -395,6 +429,10 @@ class TrackingService : Service(), SensorAdapter.Callback {
         sensorFixCount++
         // Sensor-assisted distance: pending estimate until the next GPS anchor verifies it
         fusion?.onSensorStep(prefs.tuningStrideLengthMeters)
+        // Record step for live speed/movement detection between GPS fixes
+        val now = System.currentTimeMillis()
+        stepHistory.addLast(now to totalSteps)
+        while (stepHistory.size > 200) stepHistory.removeFirst()
     }
 
     override fun onAccelerometerMagnitude(magnitude: Double) {}
@@ -438,7 +476,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         // verified GPS segment (or kept when GPS looks glitchy).
         val f = fusion
         if (f != null) {
-            val update = f.onGpsAnchor(
+            f.onGpsAnchor(
                 GpsAnchor(
                     latitude = lat, longitude = lng,
                     altitudeMeters = location.altitude, timestampMs = timeMs,
@@ -446,14 +484,16 @@ class TrackingService : Service(), SensorAdapter.Callback {
                     bearingDegrees = location.bearing,
                 )
             )
-            currentDistanceMeters = baseDistanceMeters + update.totalDistanceMeters
         }
 
         // Auto-pause: when enabled, stationary periods do not accumulate moving
         // time (spec §10). Run vs walk is classified separately for ultra efforts.
+        // Steps are a reliable movement signal even when GPS looks stationary indoors.
         val stationaryThresholdMps = 0.2 + prefs.autoPauseSensitivity * 0.03
+        val stepsGrew = stepCount > lastStepCountAtLastFix
+        lastStepCountAtLastFix = stepCount
         val moving = !isPaused && gapMs > 0 &&
-            (!prefs.autoPauseEnabled || effectiveSpeed >= stationaryThresholdMps)
+            (!prefs.autoPauseEnabled || effectiveSpeed >= stationaryThresholdMps || stepsGrew)
         if (moving) {
             if (effectiveSpeed >= prefs.runningSpeedThresholdMps) runSegmentMs += gapMs
             else walkSegmentMs += gapMs
@@ -550,7 +590,7 @@ class TrackingService : Service(), SensorAdapter.Callback {
         updateWakeLock(false)
         stopLocationUpdates()
         stopSensorUpdates()
-        val distance = currentDistanceMeters
+        val distance = currentDistanceMeters()
         if (runId > 0L) {
             serviceScope.launch {
                 // Flush queued fixes first: elevation, splits and PR cache read from the DB

@@ -90,9 +90,12 @@ class MainActivity : ComponentActivity() {
             "%.2f %s", units.distance(svc.currentDistanceMeters(), prefs.distanceUnit),
             units.distanceLabel(prefs.distanceUnit))
         val accuracy = svc.currentAccuracyMeters()
-        val speed = svc.currentSmoothedSpeedMps()
-        // Confidence gate: hide instantaneous pace when GPS quality is poor
-        if (speed != null && accuracy != null && accuracy <= prefs.paceMaxAccuracyMeters) {
+        val (speed, fromGps) = svc.currentSpeedInfo()
+        // Confidence gate: hide instantaneous pace when GPS quality is poor — but a
+        // step-derived speed is independent of GPS, so it is always shown (walking
+        // indoors with weak GPS still gets live pace/speed).
+        val paceReliable = speed != null && (!fromGps || accuracy == null || accuracy <= prefs.paceMaxAccuracyMeters)
+        if (paceReliable && speed != null) {
             val secPerMeter = 1.0 / speed
             binding.paceText.text = units.paceText(secPerMeter, prefs.paceUnit) + units.paceLabel(prefs.paceUnit)
             binding.speedText.text = String.format("%.1f %s",
